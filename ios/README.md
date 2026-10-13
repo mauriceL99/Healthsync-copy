@@ -252,30 +252,23 @@ schlägt mit einem Hinweis fehl, und der Nutzer entscheidet, ob er neu koppelt.
 
 ## Hinweise für das App-Review
 
-* **HealthKit-Nutzung:** Die App liest Health-Daten ausschließlich, um sie auf
-  ausdrücklichen Wunsch des Nutzers verschlüsselt an dessen eigenen Agent zu senden.
-  Keine Werbung, kein Verkauf, keine Analyse-SDKs, keine Speicherung von Health-Daten
-  in iCloud. Das muss so auch in der Datenschutzerklärung und den App-Privacy-Angaben
-  („Health & Fitness“, nicht zum Tracking verwendet) stehen.
-* **Datenschutzerklärung:** Für HealthKit-Apps zwingend (URL in App Store Connect und
-  idealerweise in der App). Sie muss das Relay (Betreiber, Speicherdauer max. 30 Tage
-  bzw. bis zum Abholen, nur Chiffretext) beschreiben.
-* **Review-Zugang:** Das Review-Team braucht einen funktionierenden Agent/Relay. Am
-  einfachsten einen Pairing-Code eines Test-Agents in den Review-Notes hinterlegen
-  (Code einfügen statt scannen) und erklären, dass es sich um ein
-  Entwickler-/Automatisierungswerkzeug handelt.
-* **Kein Medizinprodukt:** Der Hinweis steht im Onboarding und in den Einstellungen.
-  Die Store-Beschreibung sollte keine medizinischen Versprechen machen.
-* **Export Compliance:** Die App verwendet Verschlüsselung (CryptoKit:
-  X25519, HKDF, ChaCha20-Poly1305, Ed25519) über HTTPS hinaus. `ITSAppUsesNonExemptEncryption`
-  ist deshalb bewusst **nicht** in `Info.plist` gesetzt – App Store Connect fragt beim
-  Upload danach. Die Verschlüsselung dient dem Schutz von Nutzerdaten und nutzt nur
-  Standardalgorithmen der Betriebssystem-Frameworks; je nach Einordnung fällt das unter
-  die Ausnahmen der EAR (Kategorie 5 Teil 2), ggf. ist eine Selbstklassifizierung
-  (Annual Self-Classification Report) einzureichen. Das bitte vor der Veröffentlichung
-  rechtlich prüfen und dann die Frage in App Store Connect bzw. den Info.plist-Schlüssel
-  passend setzen.
-* **App-Icon:** `Assets.xcassets/AppIcon.appiconset` enthält nur die Slots
-  (1024×1024, hell/dunkel/getönt). Vor dem Upload ein Icon ergänzen.
+Für die Eigennutzung nicht nötig. Für TestFlight oder den App Store liegen Entwürfe in
+[`docs/store/`](../docs/store/):
+- Datenschutzerklärung (DE/EN)
+- App-Privacy-Angaben
+- Store-Texte
+- Prüfnotizen mit Demo-Pairing-Code
+- Klärung der Verschlüsselungs-Exportfrage (`ITSAppUsesNonExemptEncryption` ist bewusst
+  nicht gesetzt)
+
+Die Datenschutzerklärung wird nur als URL hinterlegt, nicht in die App eingebaut.
+
+* **HealthKit-Nutzung:** Die App liest Health-Daten nur, um sie auf Wunsch des Nutzers
+  verschlüsselt an dessen eigenen Agenten zu senden. Keine Werbung, kein Verkauf, keine
+  Analyse-SDKs, keine Health-Daten in iCloud (Guideline 5.1.3).
+* **Kein Medizinprodukt:** Der Hinweis steht im Onboarding und in den Einstellungen. Die
+  Store-Beschreibung macht keine medizinischen Versprechen.
+* **App-Icon:** `Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png` (1024 px,
+  ohne Alpha) erzeugt `scripts/make-app-icon.py`.
 * **Name:** Die App heißt „HealthBridge“ und verwendet weder Namen noch Branding des
   Originals.
