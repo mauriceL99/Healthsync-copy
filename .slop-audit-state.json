@@ -1,0 +1,923 @@
+{
+  "tool": "code-guardian v17.7 slop-audit",
+  "commit": "05b6084",
+  "done": [
+    "internal/agent/cli.go",
+    "internal/agent/mcp.go",
+    "internal/agent/dashboard.go",
+    "internal/agent/summary.go",
+    "internal/agent/selftest.go",
+    "internal/agent/data.go",
+    "internal/agent/render.go",
+    "internal/agent/operations.go",
+    "internal/healthdata/schema.go",
+    "internal/healthdata/synthetic.go",
+    "internal/healthdata/catalog.go",
+    "internal/protocol/envelope.go",
+    "internal/protocol/pairing.go",
+    "internal/protocol/encoding.go",
+    "internal/protocol/signing.go",
+    "internal/client/client.go",
+    "internal/agent/simulate.go",
+    "internal/agent/state.go",
+    "internal/agent/db.go",
+    "internal/agent/files.go",
+    "internal/agent/lock_unix.go",
+    "internal/agent/lock_other.go",
+    "internal/relay/server.go",
+    "internal/relay/store.go",
+    "cmd/healthbridge-relay/main.go",
+    "cmd/healthbridge/main.go",
+    "internal/version/version.go",
+    "internal/agent/agent_test.go",
+    "internal/protocol/protocol_test.go",
+    "internal/relay/server_test.go",
+    "internal/healthdata/schema_test.go",
+    "ios/HealthBridge/App/AppModel.swift",
+    "ios/HealthBridge/App/HealthBridgeApp.swift",
+    "ios/HealthBridge/Protocol/Base64.swift",
+    "ios/HealthBridge/Protocol/EnvelopeSealer.swift",
+    "ios/HealthBridge/Protocol/PairingCode.swift",
+    "ios/HealthBridge/Protocol/ProtocolConstants.swift",
+    "ios/HealthBridge/Protocol/RelayClient.swift",
+    "ios/HealthBridge/Protocol/RequestSigner.swift",
+    "ios/HealthBridge/Security/KeychainStore.swift",
+    "ios/HealthBridge/Store/PurchaseManager.swift",
+    "ios/HealthBridge/Health/HealthKitService.swift",
+    "ios/HealthBridge/Health/HeartRateAnalyzer.swift",
+    "ios/HealthBridge/Health/MetricCatalog.swift",
+    "ios/HealthBridge/Health/SleepAggregator.swift",
+    "ios/HealthBridge/Health/WorkoutActivityTypeName.swift",
+    "ios/HealthBridge/Sync/ActivityLog.swift",
+    "ios/HealthBridge/Sync/BackgroundSync.swift",
+    "ios/HealthBridge/Sync/HealthBatch.swift",
+    "ios/HealthBridge/Sync/HealthBatchBuilder.swift",
+    "ios/HealthBridge/Sync/SyncEngine.swift",
+    "ios/HealthBridge/Sync/SyncSettings.swift",
+    "ios/HealthBridge/Views/Components/Components.swift",
+    "ios/HealthBridge/Views/Home/HomeView.swift",
+    "ios/HealthBridge/Views/Home/MetricsView.swift",
+    "ios/HealthBridge/Views/Onboarding/OnboardingFlow.swift",
+    "ios/HealthBridge/Views/Onboarding/PairingSteps.swift",
+    "ios/HealthBridge/Views/Onboarding/QRScannerView.swift",
+    "ios/HealthBridge/Views/Onboarding/SetupSteps.swift",
+    "ios/HealthBridge/Views/RootView.swift",
+    "ios/HealthBridge/Views/Settings/PaywallView.swift",
+    "ios/HealthBridge/Views/Settings/SettingsView.swift",
+    "ios/HealthBridgeTests/HealthBatchEncodingTests.swift",
+    "ios/HealthBridgeTests/HealthLogicTests.swift",
+    "ios/HealthBridgeTests/PairingCodeTests.swift",
+    "ios/HealthBridgeTests/ProtocolVectorTests.swift"
+  ],
+  "pending": [],
+  "batches": {
+    "G1": {
+      "summary": "G1: 24 SLOP / 34 JUSTIFIED / 4 UNKLAR; 3 critical (E7, E5, F5)",
+      "files": [
+        "internal/agent/cli.go",
+        "internal/agent/mcp.go",
+        "internal/agent/dashboard.go",
+        "internal/agent/summary.go",
+        "internal/agent/selftest.go",
+        "internal/agent/data.go",
+        "internal/agent/render.go",
+        "internal/agent/operations.go"
+      ]
+    },
+    "G2": {
+      "summary": "G2: 25 SLOP / 22 JUSTIFIED / 4 UNKLAR (40 Phase-1-Kandidaten: 2 bestätigt, 38 JUSTIFIED); 9 critical (6x K6, 3x F5)",
+      "files": [
+        "internal/healthdata/schema.go",
+        "internal/healthdata/synthetic.go",
+        "internal/healthdata/catalog.go",
+        "internal/protocol/envelope.go",
+        "internal/protocol/pairing.go",
+        "internal/protocol/encoding.go",
+        "internal/protocol/signing.go",
+        "internal/client/client.go",
+        "internal/agent/simulate.go",
+        "internal/agent/state.go",
+        "internal/agent/db.go",
+        "internal/agent/files.go",
+        "internal/agent/lock_unix.go",
+        "internal/agent/lock_other.go"
+      ]
+    },
+    "G3": {
+      "summary": "G3: 11 SLOP / 24 JUSTIFIED / 1 UNKLAR (alle 17 Phase-1-Kandidaten JUSTIFIED)",
+      "files": [
+        "internal/relay/server.go",
+        "internal/relay/store.go",
+        "cmd/healthbridge-relay/main.go",
+        "cmd/healthbridge/main.go",
+        "internal/version/version.go",
+        "internal/agent/agent_test.go",
+        "internal/protocol/protocol_test.go",
+        "internal/relay/server_test.go",
+        "internal/healthdata/schema_test.go"
+      ]
+    },
+    "S1": {
+      "summary": "S1: 11 SLOP / 20 JUSTIFIED / 5 UNKLAR (keine Phase-1-Kandidaten, Swift)",
+      "files": [
+        "ios/HealthBridge/App/AppModel.swift",
+        "ios/HealthBridge/App/HealthBridgeApp.swift",
+        "ios/HealthBridge/Protocol/Base64.swift",
+        "ios/HealthBridge/Protocol/EnvelopeSealer.swift",
+        "ios/HealthBridge/Protocol/PairingCode.swift",
+        "ios/HealthBridge/Protocol/ProtocolConstants.swift",
+        "ios/HealthBridge/Protocol/RelayClient.swift",
+        "ios/HealthBridge/Protocol/RequestSigner.swift",
+        "ios/HealthBridge/Security/KeychainStore.swift",
+        "ios/HealthBridge/Store/PurchaseManager.swift"
+      ]
+    },
+    "S2": {
+      "summary": "S2: 24 SLOP / 25 JUSTIFIED / 2 UNKLAR (Swift, keine Phase-1-Kandidaten); 10 critical (E5x3, E7x1, F1x3, F5x2, K6x1)",
+      "files": [
+        "ios/HealthBridge/Health/HealthKitService.swift",
+        "ios/HealthBridge/Health/HeartRateAnalyzer.swift",
+        "ios/HealthBridge/Health/MetricCatalog.swift",
+        "ios/HealthBridge/Health/SleepAggregator.swift",
+        "ios/HealthBridge/Health/WorkoutActivityTypeName.swift",
+        "ios/HealthBridge/Sync/ActivityLog.swift",
+        "ios/HealthBridge/Sync/BackgroundSync.swift",
+        "ios/HealthBridge/Sync/HealthBatch.swift",
+        "ios/HealthBridge/Sync/HealthBatchBuilder.swift",
+        "ios/HealthBridge/Sync/SyncEngine.swift",
+        "ios/HealthBridge/Sync/SyncSettings.swift"
+      ]
+    },
+    "S3": {
+      "summary": "S3: 14 SLOP-Zeilen (12 Befunde) / 31 JUSTIFIED / 2 UNKLAR (2 Phase-1-Kandidaten JUSTIFIED: Test-Fixture-Datum)",
+      "files": [
+        "ios/HealthBridge/Views/Components/Components.swift",
+        "ios/HealthBridge/Views/Home/HomeView.swift",
+        "ios/HealthBridge/Views/Home/MetricsView.swift",
+        "ios/HealthBridge/Views/Onboarding/OnboardingFlow.swift",
+        "ios/HealthBridge/Views/Onboarding/PairingSteps.swift",
+        "ios/HealthBridge/Views/Onboarding/QRScannerView.swift",
+        "ios/HealthBridge/Views/Onboarding/SetupSteps.swift",
+        "ios/HealthBridge/Views/RootView.swift",
+        "ios/HealthBridge/Views/Settings/PaywallView.swift",
+        "ios/HealthBridge/Views/Settings/SettingsView.swift",
+        "ios/HealthBridgeTests/HealthBatchEncodingTests.swift",
+        "ios/HealthBridgeTests/HealthLogicTests.swift",
+        "ios/HealthBridgeTests/PairingCodeTests.swift",
+        "ios/HealthBridgeTests/ProtocolVectorTests.swift"
+      ]
+    }
+  },
+  "findings": [
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/summary.go:208-209 E7 (critical) Trend \"flat\" bei Vorperiode 0 trotz Change != 0 (JSON/MCP)"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/summary.go:240-249,261-262 E5 (critical) fehlende Schlafstufen zählen als 0 -> Durchschnitte zu niedrig, widerspricht r.Metrics"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/operations.go:159-161 F5 (critical) Safety-Code-Fehler verworfen -> leerer MITM-Prüfwert möglich"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/cli.go:177 O4 dispatch() 331 Zeilen, Formatierung inline, asJSON baut emit nach"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/mcp.go:64,70,75 D5 3660 unbenannt (+summary.go:130-131)"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/mcp.go:70,248,75,258 D6 Defaults 30/14 dreifach"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/mcp.go:199-231 R1 baut withDB nach (cli.go:156-175)"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/dashboard.go:39-46,105 N3 Renderer fragt DB selbst, Location pro Workout-Zeile"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/dashboard.go:81,94-101 D6 Chart-Titel/Einheiten dupliziert zum Katalog"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/summary.go:130-131 D5 3660 (s.o.)"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/summary.go:212-216 K7 Trend-Schwelle 3 % unbegründet"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/summary.go:133 N2 ResolveWindow nutzt time.Now() statt env.now"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/summary.go:366-367 R1 parst Start neu statt StartTime()"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/summary.go:231-249,434-435,462 R1 lokales num() statt Day.Number"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/summary.go:371 O4 highlights() 88 Zeilen, rechnet Daten im Text-Builder (fehlen im JSON)"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/summary.go:302 D6 Zonenzahl 5 mehrfach"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/selftest.go:36 N2 GenerateKey-Fehler verworfen"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/selftest.go:78-87 (Ressourcenleck) db.Close bei Fehler in Apply nicht abgesichert"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/data.go:124 R2 ReplaceAll(Type,\"_\",\" \") 5x"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/render.go:62-63 N2 nur AvgBedtime geprüft"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/operations.go:136-140 K7 OpenDB+Close ohne Warum"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/operations.go:229 O2 FetchOptions.Quiet tot"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/operations.go:26-27,30-42 O2 Env.Now/Timeout nie gesetzt, Naht umgangen"
+    },
+    {
+      "batch": "G1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/operations.go:344 N2 LastFetch map statt Struct"
+    },
+    {
+      "batch": "G1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "mcp.go:276 healthkit-Feld fehlt im MCP-Metrik-Output"
+    },
+    {
+      "batch": "G1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "dashboard.go:196-197 Kommentar vs. Label-Kollisionslogik"
+    },
+    {
+      "batch": "G1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "operations.go:70-77,103 --rotate ohne --relay archiviert erst und scheitert dann (Config{} löscht Relay/Name)"
+    },
+    {
+      "batch": "G1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "operations.go:282-289,321-325 fehlgeschlagene Envelopes werden per Ack endgültig gelöscht"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/state.go:239-245 K6 (critical) writeNewPrivate --force überschreibt ohne chmod 0600 -> Export bleibt 0644"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/healthdata/schema.go:123 F5 (critical) Parse-Fehlerursache verloren (Envelope wird danach gelöscht)"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/db.go:98 F5 (critical) korrupter Tag wird still überschrieben"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/client/client.go:119 F5 (critical) Unmarshal-Fehler verworfen"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/healthdata/catalog.go:29 K6 (critical) HigherIsBetter nie gelesen, Kommentar behauptet Nutzung"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/protocol/encoding.go:115-118 K6 (critical) \"control characters\" entfernt nur C0+DEL"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/simulate.go:27-29,76-79 K6 (critical) Doc \"backfill\" vs. letzter Chunk sync"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/state.go:178 K6 (critical) Backup-Pfad im Kommentar falsch"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/agent/db.go:208 K6 (critical) Doc-Kommentar WorkoutDate vs WorkoutDates"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/healthdata/schema.go:196 O6 sanitizeDay Verschachtelung 5"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/healthdata/schema.go:367 R1 round doppelt (summary.go:467)"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/healthdata/schema.go:427 N2 Parameter path vom Typ Metric"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/healthdata/schema.go:294-296,320 D6 Puls-Grenzen 20/260 mehrfach"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/protocol/encoding.go:116,130 O2 cleanLabel(max) nur ein Aufrufer"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/protocol/signing.go:26 K7 NonceWindow >= 2*MaxClockSkew undokumentiert"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/client/client.go:212 O5 LinkDevice 6 Datenparameter, Strings vertauschbar"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/client/client.go:93 N3 Do() prüft Routen-String für Header"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/client/client.go:102 K7 96<<20 unerklärt"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/simulate.go:41,65 O3 Defaults doppelt, Days<=0 still 30"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/simulate.go:124-133 O3 chunkBatch parst/lädt TZ neu statt loc zu nutzen"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/simulate.go:105-109 R1 sortierte Keys nachgebaut"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/simulate.go:69 K7 30 = SyncPlan.chunkDays ohne Verweis"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/state.go:59-62 K7 Fallback ./.healthbridge still"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/db.go:200-201 N2 Workouts-Fehler ohne Kontext"
+    },
+    {
+      "batch": "G2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/db.go:271 R1 SortedDates Nachbau"
+    },
+    {
+      "batch": "G2",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "schema.go:328 HR-Objekt nur mit recovery/max_ref wird verworfen ohne DroppedValues"
+    },
+    {
+      "batch": "G2",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "schema.go:307-308,377 Grenzen 300 / 1970-2200 ohne Quelle"
+    },
+    {
+      "batch": "G2",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "schema.go:30 uuidPattern doppelt zu protocol (Abhängigkeitsfreiheit gewollt?)"
+    },
+    {
+      "batch": "G2",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "db.go:140-145 DB-Fehler -> UTC-Fallback"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/relay/server.go:485-491 F5 (critical) writeError verschluckt interne Fehler, kein Log -> nicht-apiError in route() mit Methode/Pfad loggen"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/relay/server.go:272-275 F5 (critical) Registration-Token-Check fail-open bei Store-Fehler -> erst err != nil && !NotFound zurückgeben"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/relay/server.go:150-153 F5 (critical) jeder ReadAll-Fehler = 413; limit 0 -> max(limit,1) macht unexpected_body unerreichbar -> MaxBytesError unterscheiden"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/relay/server.go:277,414 K7+N2 sig,_ := DecodeB64 ohne Warum; 32 vs ed25519.PublicKeySize gemischt"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/relay/server.go:109 N2 time.Since statt injizierter Uhr"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/relay/server.go:494-497 K7 XFF linkester Eintrag, Annahme undokumentiert (rate-limit bypass bei append-Proxy)"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/relay/store.go:83-91 N2 tote JSON-Tags auf Device, widersprechen deviceJSON"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/relay/store.go:160,225 K7 TouchAccount/TouchDevice verwerfen Fehler ohne Warum"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/relay/store.go:63 T2 ErrDeviceUnlinked unbenutzt"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "internal/agent/agent_test.go:160,186-188 Test: health_sync-Antwort nie geprüft, Summary-Assert schwach"
+    },
+    {
+      "batch": "G3",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "internal/healthdata/schema_test.go:44,57-58 K6 (critical) 1e309-Overflow-Fall wird vor Parse ersetzt, Kommentar falsch"
+    },
+    {
+      "batch": "G3",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "internal/relay/store.go:238-257 K6 AddEnvelope SELECT+INSERT ohne Transaktion -> Race bei parallelem Retry (500)"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Security/KeychainStore.swift:166-171 F5 (critical) PairingStore.load() kollabiert nicht-gepaart/gesperrt/korrupt zu nil -> BackgroundSync:172 Fehlverhalten, Widerspruch zu isPairedIfKnown"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/App/AppModel.swift:212 K6 (critical) Kommentar behauptet \"possibly outdated\"-Anzeige, die es nicht gibt"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Security/KeychainStore.swift:84-86 F1 (critical) SecItemDelete-Status verworfen (Erststart, Unpair)"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/App/AppModel.swift:33 K7 doppeltes prepareFirstLaunchIfNeeded ohne Warum"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Protocol/PairingCode.swift:157 K7/D5 Magic 512 ohne Quelle"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Protocol/ProtocolConstants.swift:59-70 R1 baut B64URL.isAlphabet nach"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Security/KeychainStore.swift:136-151 R1 displayName/relayHost doppelt zu PairingPayload, divergiert (Port)"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Security/KeychainStore.swift:116-118 T2 deleteSigningKey ungenutzt"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Store/PurchaseManager.swift:28-31 R1 Produkt-ID-Literale doppelt"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Store/PurchaseManager.swift:7 T2 productUnavailable nie geworfen"
+    },
+    {
+      "batch": "S1",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Store/PurchaseManager.swift:73,108 F5 StoreKit-Fehler durch Pauschaltext ersetzt"
+    },
+    {
+      "batch": "S1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "AppModel.swift:106 doppeltes syncState-Laden nach await"
+    },
+    {
+      "batch": "S1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "EnvelopeSealer.swift:166-220 open/rawInflate nur für Tests im App-Target"
+    },
+    {
+      "batch": "S1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "ProtocolConstants.swift:25-28 pairingHash nur für Tests"
+    },
+    {
+      "batch": "S1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "PurchaseManager.swift:121-127 eigene revocation/expiration-Prüfung vs Billing Grace Period"
+    },
+    {
+      "batch": "S1",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "PurchaseManager.swift:26-27 Platzhalter-Produkt-IDs ohne INTENTIONAL-Marker (Vorlage oder Release?)"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Sync/HealthBatchBuilder.swift:46-58 F5 (critical) tolerant() verschluckt Fehler, backfilledDays wird trotzdem fortgeschrieben -> dauerhafte Lücken"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Sync/SyncEngine.swift:307 F5 (critical) maximumHeartRate try? -> Fallback 190 ungekennzeichnet"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Sync/BackgroundSync.swift:227 F1 (critical) enableBackgroundDelivery-Fehler verworfen"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Sync/BackgroundSync.swift:60,65 F1 (critical) register()-Ergebnis verworfen"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Sync/ActivityLog.swift:103-104 F1 (critical) Schreibfehler verschluckt"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Sync/ActivityLog.swift:98-99 E5 (critical) Decode-Fehler -> [] -> nächstes append löscht Log"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Health/HealthKitService.swift:205-207 E5 (critical, latent) Option/Aggregation-Mismatch -> still [:]"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Health/MetricCatalog.swift:384 E5 (critical, latent) Kategorie per rawValue geraten, ?? .activity"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Sync/SyncSettings.swift:235-236,284 E7 (critical, latent) Fallback \"1.0.0\"/\"UTC\" plausibel statt ehrlicher Sentinel"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Health/HeartRateAnalyzer.swift:24-33 K6 (critical) Kommentar \"clamped 100-240\" vs. <100 -> 190"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Health/HealthKitService.swift:222-228 (+287,342,389,420) R2 Continuation-Fehlerblock 5x"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Health/HealthKitService.swift:437-438 R1 Kalender nachgebaut (DayKey.localCalendar)"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Health/HeartRateAnalyzer.swift:97,115 (+HealthBatchBuilder:205,212) D6 172_800 unbenannt"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Health/HeartRateAnalyzer.swift:131-135 K7 Recovery-Fenster unbegründet"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Health/MetricCatalog.swift:239,337 G4 swiftlint:disable ohne SwiftLint, wirkungslos"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Health/MetricCatalog.swift:137 K7 .hour -> .count() ohne Warum"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/BackgroundSync.swift:8-9 D6 com.example-Präfix an 5 Stellen"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/HealthBatchBuilder.swift:238 K7 +90 s gekoppelt an Recovery-Fenster"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/SyncEngine.swift:143-145 T2 running ungenutzt"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/SyncEngine.swift:159 T2 lastAttempt write-only"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/SyncEngine.swift:207-210 E6 handleUnlinked Durchreicher"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/SyncEngine.swift:281 K7 +512 Byte unbegründet"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/SyncEngine.swift:212-300 O4 perform 82 Zeilen"
+    },
+    {
+      "batch": "S2",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Sync/SyncSettings.swift:51-53 T2 shortTitle ungenutzt"
+    },
+    {
+      "batch": "S2",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "MetricCatalog.swift:343 definition(group:key:) nur in Tests"
+    },
+    {
+      "batch": "S2",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "HealthBatch.swift:24-26 isEmpty ungenutzt; leere Chunks werden hochgeladen"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Views/Onboarding/QRScannerView.swift:33 F1 (critical) try? startScanning() verschluckt ScanningUnavailable -> leerer Scanner"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Views/Home/MetricsView.swift:29 F1 (critical) catch ohne Fallback -> Fehler verschwindet still"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": true,
+      "text": "ios/HealthBridge/Views/Components/Components.swift:6,13 K6 (critical) Doku \"full-width\" vs Styles ohne Breite; HomeView:192-201 nicht voll breit"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Components/Components.swift:42 O2 CardHeader.trailing ungenutzt"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Home/HomeView.swift:142 N1 successCount ist Date?"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Home/HomeView.swift:307-324 R1 tile() baut Card nach"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Home/HomeView.swift:341 + PaywallView.swift:39-40,30 + SettingsView.swift:121 D6 hartkodierte 7/365 Tage, Intervalle"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Home/HomeView.swift:192-200 R2 Health-Freigabe-Aktion 3x, Fehlertext-Ausdruck 6x -> Error.userMessage"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Onboarding/SetupSteps.swift:186-187 T2 ungenutzte EnvironmentObjects"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Onboarding/SetupSteps.swift:28-31,55-58,238-241 R2 Kachel-Hintergrund 3x"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Settings/SettingsView.swift:180 R1 baut freeLimit/effectiveHistoryDays nach"
+    },
+    {
+      "batch": "S3",
+      "verdict": "SLOP",
+      "critical": false,
+      "text": "ios/HealthBridgeTests/HealthBatchEncodingTests.swift:92-95 Tautologie-Anteil"
+    },
+    {
+      "batch": "S3",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "ios/HealthBridge/Views/Settings/SettingsView.swift:102-107 \"Manage subscription\" auch bei Lifetime-Käufern"
+    },
+    {
+      "batch": "S3",
+      "verdict": "UNKLAR",
+      "critical": false,
+      "text": "Produkttext \"one point per 5 seconds\" (SetupSteps:47, PaywallView:45) vs. größere Buckets bei langen Workouts (HeartRateAnalyzer:102)"
+    }
+  ]
+}
