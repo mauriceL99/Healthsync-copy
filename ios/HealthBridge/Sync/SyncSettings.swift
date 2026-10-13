@@ -55,10 +55,6 @@ enum SyncInterval: Int, Codable, CaseIterable, Identifiable, Sendable {
         guard let last = values.last else { return "" }
         return values.dropLast().joined(separator: ", ") + " or " + last + " hours"
     }
-
-    var shortTitle: String {
-        "\(rawValue)h"
-    }
 }
 
 enum HistoryWindow: Int, Codable, CaseIterable, Identifiable, Sendable {

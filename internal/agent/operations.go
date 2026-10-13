@@ -19,12 +19,15 @@ import (
 	"github.com/mauriceL99/Healthsync-copy/internal/protocol"
 )
 
+// relayTimeout bounds every relay request of the CLI.
+const relayTimeout = 30 * time.Second
+
 // Env carries process-wide dependencies so commands are testable.
 type Env struct {
-	Out     io.Writer
-	Err     io.Writer
-	Now     func() time.Time
-	Timeout time.Duration
+	Out io.Writer
+	Err io.Writer
+	// Now replaces the wall clock (tests); nil means time.Now.
+	Now func() time.Time
 }
 
 func (e Env) now() time.Time {
@@ -34,16 +37,9 @@ func (e Env) now() time.Time {
 	return time.Now()
 }
 
-func (e Env) timeout() time.Duration {
-	if e.Timeout > 0 {
-		return e.Timeout
-	}
-	return 30 * time.Second
-}
-
 // AgentClient builds a signed relay client for the agent identity.
 func (e Env) AgentClient(s *State, id *Identity) (*client.Client, error) {
-	c, err := client.New(s.Config.Relay, protocol.AgentKey(s.Config.Account), id.Sig, e.timeout())
+	c, err := client.New(s.Config.Relay, protocol.AgentKey(s.Config.Account), id.Sig, relayTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +248,6 @@ func ShowPairing(env Env, s *State, terminal bool) error {
 // FetchOptions configures `healthbridge fetch`.
 type FetchOptions struct {
 	KeepOnRelay bool
-	Quiet       bool
 }
 
 // FetchResult summarizes one fetch run.

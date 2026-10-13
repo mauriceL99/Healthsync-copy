@@ -183,8 +183,6 @@ struct HealthPermissionStep: View {
 struct HistoryWindowStep: View {
     var onContinue: () -> Void
 
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var purchases: PurchaseManager
     @State private var showPaywall = false
 
     var body: some View {

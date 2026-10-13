@@ -4,14 +4,11 @@ import StoreKit
 
 enum PurchaseError: LocalizedError {
     case failedVerification
-    case productUnavailable
 
     var errorDescription: String? {
         switch self {
         case .failedVerification:
             return "The App Store could not verify the purchase."
-        case .productUnavailable:
-            return "This product is not available right now."
         }
     }
 }

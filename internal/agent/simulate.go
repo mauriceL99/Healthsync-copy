@@ -50,7 +50,7 @@ func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 	if err != nil {
 		return err
 	}
-	c, err := client.New(p.Relay, protocol.KeyNewDevice, devPriv, env.timeout())
+	c, err := client.New(p.Relay, protocol.KeyNewDevice, devPriv, relayTimeout)
 	if err != nil {
 		return err
 	}

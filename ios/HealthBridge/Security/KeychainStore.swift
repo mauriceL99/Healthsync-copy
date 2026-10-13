@@ -128,10 +128,6 @@ enum DeviceIdentityStore {
         try KeychainStore.set(key.rawRepresentation, for: .deviceSigningKey)
         return key
     }
-
-    static func deleteSigningKey() throws {
-        try KeychainStore.delete(.deviceSigningKey)
-    }
 }
 
 /// Everything the app keeps about the paired agent. Contains only public keys and IDs;

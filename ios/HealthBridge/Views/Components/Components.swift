@@ -39,7 +39,6 @@ struct Card<Content: View>: View {
 struct CardHeader: View {
     let title: String
     let symbol: String
-    var trailing: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -48,11 +47,6 @@ struct CardHeader: View {
             Text(title)
                 .font(.headline)
             Spacer()
-            if let trailing {
-                Text(trailing)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 }

@@ -58,10 +58,9 @@ CREATE INDEX IF NOT EXISTS nonces_by_expiry ON nonces(expires_at);
 
 // Errors returned by the store.
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrConflict       = errors.New("conflict")
-	ErrDeviceUnlinked = errors.New("device unlinked")
-	ErrReplay         = errors.New("nonce already used")
+	ErrNotFound = errors.New("not found")
+	ErrConflict = errors.New("conflict")
+	ErrReplay   = errors.New("nonce already used")
 )
 
 // Store is the relay's SQLite persistence.
@@ -79,16 +78,17 @@ type Account struct {
 }
 
 // Device is a linked (or formerly linked) iPhone.
+// Its API representation is built by deviceJSON in server.go.
 type Device struct {
-	ID         string     `json:"device_id"`
-	Account    string     `json:"-"`
-	SigPub     []byte     `json:"-"`
-	Name       string     `json:"name"`
-	Platform   string     `json:"platform"`
-	AppVersion string     `json:"app_version"`
-	LinkedAt   time.Time  `json:"-"`
-	LastSeenAt time.Time  `json:"-"`
-	UnlinkedAt *time.Time `json:"-"`
+	ID         string
+	Account    string
+	SigPub     []byte
+	Name       string
+	Platform   string
+	AppVersion string
+	LinkedAt   time.Time
+	LastSeenAt time.Time
+	UnlinkedAt *time.Time
 }
 
 // OpenStore opens (and migrates) the relay database at path.

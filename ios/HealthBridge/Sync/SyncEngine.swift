@@ -151,10 +151,6 @@ actor SyncEngine {
         self.log = log
     }
 
-    var running: Bool {
-        isRunning
-    }
-
     @discardableResult
     func run(
         trigger: SyncTrigger,
