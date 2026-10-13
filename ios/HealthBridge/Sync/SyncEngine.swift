@@ -195,7 +195,8 @@ actor SyncEngine {
         } catch {
             let syncError = SyncError.wrap(error)
             if case .deviceUnlinked = syncError {
-                handleUnlinked()
+                // The agent unlinked this device: go back to unpaired.
+                PairingLifecycle.markUnlinkedByAgent(log: log)
             } else if case .notPaired = syncError {
                 // Nothing to record.
             } else {
@@ -223,11 +224,6 @@ actor SyncEngine {
         guard count > 0 else { return nil }
         let reads = count == 1 ? "1 Health read" : "\(count) Health reads"
         return "\(reads) failed and were left out. Use \"Send full history again\" in Settings to fill the gap."
-    }
-
-    /// The relay reported that the agent unlinked this device: go back to unpaired.
-    private func handleUnlinked() {
-        PairingLifecycle.markUnlinkedByAgent(log: log)
     }
 
     private func perform(
