@@ -20,6 +20,11 @@ import (
 	"github.com/mauriceL99/Healthsync-copy/internal/protocol"
 )
 
+// maxResponseBytes bounds a relay response. A fetch page carries at most about
+// 32 MiB of ciphertext (relay MaxFetchBytes); base64 and JSON framing add about a
+// third, so 96 MiB leaves headroom without letting a broken relay exhaust memory.
+const maxResponseBytes = 96 << 20
+
 // APIError is an error response from the relay.
 type APIError struct {
 	Status  int
@@ -99,7 +104,7 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, in, out an
 		return fmt.Errorf("relay request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 96<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return err
 	}

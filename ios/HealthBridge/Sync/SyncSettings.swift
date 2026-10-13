@@ -48,6 +48,13 @@ enum SyncInterval: Int, Codable, CaseIterable, Identifiable, Sendable {
         rawValue == 1 ? "Every hour" : "Every \(rawValue) hours"
     }
 
+    /// "1, 3, 6, 12 or 24 hours", built from the cases so texts never drift.
+    static var choicesText: String {
+        let values = allCases.map { String($0.rawValue) }
+        guard let last = values.last else { return "" }
+        return values.dropLast().joined(separator: ", ") + " or " + last + " hours"
+    }
+
     var shortTitle: String {
         "\(rawValue)h"
     }
@@ -62,19 +69,15 @@ enum HistoryWindow: Int, Codable, CaseIterable, Identifiable, Sendable {
     var id: Int { rawValue }
 
     var title: String {
-        switch self {
-        case .week: return "7 days"
-        case .month: return "30 days"
-        case .quarter: return "90 days"
-        case .year: return "365 days"
-        }
+        "\(rawValue) days"
     }
 
     var requiresPro: Bool {
-        self != .week
+        rawValue > Self.freeLimit.rawValue
     }
 
     static let freeLimit: HistoryWindow = .week
+    static let proLimit: HistoryWindow = .year
 }
 
 /// User preferences. Stored as JSON in UserDefaults (no health data).

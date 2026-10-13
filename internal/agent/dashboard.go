@@ -91,14 +91,22 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 			}
 		}
 	}
-	add("Steps", "steps", "bar", chartSeries{"Steps", "c1", series("activity", "steps")})
+	// metric charts one catalog metric; title and unit come from the catalog.
+	metric := func(path, kind, class string) {
+		m, ok := healthdata.Lookup(path)
+		if !ok {
+			return
+		}
+		add(m.Label, m.Unit, kind, chartSeries{m.Label, class, series(m.Group, m.Key)})
+	}
+	metric("activity.steps", "bar", "c1")
 	add("Sleep stages", "min", "stack",
 		chartSeries{"Deep", "c3", series("sleep", "deep_min")}, chartSeries{"Core", "c1", series("sleep", "core_min")},
 		chartSeries{"REM", "c2", series("sleep", "rem_min")}, chartSeries{"Awake", "c4", series("sleep", "awake_min")})
-	add("Resting heart rate", "bpm", "line", chartSeries{"Resting HR", "c4", series("heart", "resting_bpm")})
-	add("Heart rate variability (SDNN)", "ms", "line", chartSeries{"HRV", "c2", series("heart", "hrv_sdnn_ms")})
-	add("Active energy", "kcal", "bar", chartSeries{"Active energy", "c4", series("activity", "active_energy_kcal")})
-	add("Weight", "kg", "line", chartSeries{"Weight", "c3", series("body", "weight_kg")})
+	metric("heart.resting_bpm", "line", "c4")
+	metric("heart.hrv_sdnn_ms", "line", "c2")
+	metric("activity.active_energy_kcal", "bar", "c4")
+	metric("body.weight_kg", "line", "c3")
 
 	for i := len(workouts) - 1; i >= 0; i-- {
 		wk := workouts[i]

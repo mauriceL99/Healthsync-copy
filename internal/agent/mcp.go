@@ -61,18 +61,18 @@ func (m *MCP) tools() []tool {
 		{"health_summary", "Health summary", "Summarize the user's synced Apple Health data for a period: per-metric averages, ranges and trends vs. the previous period, sleep, workouts and highlights. Read-only, local data.",
 			object(map[string]any{
 				"period": map[string]any{"type": "string", "enum": []string{"day", "week", "month", "quarter", "year"}, "default": "week"},
-				"days":   map[string]any{"type": "integer", "minimum": 1, "maximum": 3660, "description": "Custom window length in days (overrides period)."},
+				"days":   map[string]any{"type": "integer", "minimum": 1, "maximum": MaxWindowDays, "description": "Custom window length in days (overrides period)."},
 				"end":    dateProp,
 			}), readOnly("Health summary")},
 		{"health_metric_series", "Metric time series", "Daily values of one metric, e.g. activity.steps, heart.resting_bpm, heart.hrv_sdnn_ms, sleep.asleep_min, body.weight_kg. Use health_list_metrics for all names.",
 			object(map[string]any{
 				"metric": map[string]any{"type": "string", "description": "Metric path (group.key) or key."},
-				"days":   map[string]any{"type": "integer", "minimum": 1, "maximum": 3660, "default": 30},
+				"days":   map[string]any{"type": "integer", "minimum": 1, "maximum": MaxWindowDays, "default": DefaultSeriesDays},
 				"end":    dateProp,
 			}, "metric"), readOnly("Metric time series")},
 		{"health_workouts", "Workouts", "List workouts with duration, distance, energy and detailed heart-rate metrics (avg/min/max, recovery, time in zones).",
 			object(map[string]any{
-				"days":                       map[string]any{"type": "integer", "minimum": 1, "maximum": 3660, "default": 14},
+				"days":                       map[string]any{"type": "integer", "minimum": 1, "maximum": MaxWindowDays, "default": DefaultWorkoutDays},
 				"end":                        dateProp,
 				"include_heart_rate_samples": map[string]any{"type": "boolean", "default": false, "description": "Include per-5-second heart-rate samples (large)."},
 			}), readOnly("Workouts")},
@@ -245,7 +245,7 @@ func (m *MCP) call(ctx context.Context, name string, raw json.RawMessage) (strin
 		if err != nil {
 			return "", nil, err
 		}
-		w, err := ResolveWindow("", firstPositive(a.Days, 30), a.End, cov.LastDate, m.Env.now())
+		w, err := ResolveWindow("", firstPositive(a.Days, DefaultSeriesDays), a.End, cov.LastDate, m.Env.now())
 		if err != nil {
 			return "", nil, err
 		}
@@ -255,7 +255,7 @@ func (m *MCP) call(ctx context.Context, name string, raw json.RawMessage) (strin
 		}
 		return RenderSeries(series) + "\n" + Notice, series, nil
 	case "health_workouts":
-		w, err := ResolveWindow("", firstPositive(a.Days, 14), a.End, cov.LastDate, m.Env.now())
+		w, err := ResolveWindow("", firstPositive(a.Days, DefaultWorkoutDays), a.End, cov.LastDate, m.Env.now())
 		if err != nil {
 			return "", nil, err
 		}

@@ -50,13 +50,15 @@ Projekteinstellungen (aus `project.yml`):
 1. In `project.yml` `DEVELOPMENT_TEAM` auf die eigene Team-ID setzen (oder in Xcode
    unter *Signing & Capabilities* das Team wählen).
 2. Die Platzhalter-Bundle-ID `com.example.healthbridge` durch eine eigene ersetzen,
-   z. B. `de.meinname.healthbridge`. Dabei **konsistent** ändern:
-   * `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` (App und Tests)
-   * `BGTaskSchedulerPermittedIdentifiers` in `Info.plist` und `BackgroundTaskID`
-     in `HealthBridge/Sync/BackgroundSync.swift`
-   * Produkt-IDs in `HealthBridge/Store/PurchaseManager.swift`,
-     `Configuration/Products.storekit` und App Store Connect
-   * Keychain-Service in `HealthBridge/Security/KeychainStore.swift` (optional)
+   z. B. `de.meinname.healthbridge`:
+   * `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` (App und Tests). Die IDs der
+     Hintergrund-Tasks (`<bundle-id>.refresh`/`.backfill`, auch in `Info.plist`) und der
+     Produkte (`<bundle-id>.pro.lifetime`/`.pro.yearly`) leitet die App daraus ab
+     (`HealthBridge/App/AppIdentifiers.swift`).
+   * Dieselben Produkt-IDs in `Configuration/Products.storekit` und in App Store Connect
+     anlegen.
+   * Keychain-Service in `HealthBridge/Security/KeychainStore.swift` (optional; eine
+     Änderung macht vorhandene Keychain-Einträge unerreichbar).
 3. Automatische Signierung legt die App-ID mit den Capabilities aus der
    Entitlements-Datei an.
 
@@ -87,8 +89,8 @@ locked“ ab und läuft beim nächsten Mal erneut.
 
 | Identifier | Typ | Zweck |
 | --- | --- | --- |
-| `com.example.healthbridge.refresh` | `BGAppRefreshTask` | Modus „Geplant“ (1/3/6/12/24 h) und Sicherheitsnetz im Modus „Bei neuen Daten“ |
-| `com.example.healthbridge.backfill` | `BGProcessingTask` | Fortsetzen eines unterbrochenen Verlaufs-Imports |
+| `<bundle-id>.refresh` | `BGAppRefreshTask` | Modus „Geplant“ (1/3/6/12/24 h) und Sicherheitsnetz im Modus „Bei neuen Daten“ |
+| `<bundle-id>.backfill` | `BGProcessingTask` | Fortsetzen eines unterbrochenen Verlaufs-Imports |
 
 iOS entscheidet selbst, wann ein Hintergrund-Task tatsächlich läuft. Der eingestellte
 Abstand ist nur ein Mindestabstand. Zum Testen im Debugger (App pausieren, dann in der

@@ -83,7 +83,7 @@ func RenderText(r Report) string {
 		}
 		b.WriteString(line + "\n")
 	}
-	if len(w.ZoneMinutes) == 5 {
+	if len(w.ZoneMinutes) == healthdata.HeartRateZones {
 		fmt.Fprintf(&b, "  heart-rate zones (min): Z1 %s · Z2 %s · Z3 %s · Z4 %s · Z5 %s\n",
 			formatNumber(w.ZoneMinutes[0], 0), formatNumber(w.ZoneMinutes[1], 0), formatNumber(w.ZoneMinutes[2], 0), formatNumber(w.ZoneMinutes[3], 0), formatNumber(w.ZoneMinutes[4], 0))
 	}

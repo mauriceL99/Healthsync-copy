@@ -202,14 +202,14 @@ struct HealthBatchBuilder {
 
     private func makeRecord(for workout: HKWorkout, options: BatchOptions) async throws -> WorkoutRecord? {
         let duration = workout.endDate.timeIntervalSince(workout.startDate)
-        guard duration >= 0, duration <= 172_800 else { return nil }
+        guard duration >= 0, duration <= HeartRateAnalyzer.maxWorkoutSeconds else { return nil }
 
         var record = WorkoutRecord(
             id: workout.uuid.uuidString.lowercased(),
             type: workout.workoutActivityType.schemaName,
             start: RFC3339.string(from: workout.startDate),
             end: RFC3339.string(from: workout.endDate),
-            durationS: MetricValue.normalize(workout.duration, decimals: 0, range: 0...172_800)
+            durationS: MetricValue.normalize(workout.duration, decimals: 0, range: 0...HeartRateAnalyzer.maxWorkoutSeconds)
                 ?? duration.rounded()
         )
 

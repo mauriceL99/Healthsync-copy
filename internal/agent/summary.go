@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -87,6 +86,19 @@ type Report struct {
 	Notice       string       `json:"notice"`
 }
 
+// Window limits and defaults shared by the CLI flags and the MCP tool schemas.
+const (
+	// MaxWindowDays caps a report window at about ten years: enough for any
+	// Apple Health history, small enough to keep one query and its JSON bounded.
+	MaxWindowDays = 3660
+	// DefaultSeriesDays and DefaultWorkoutDays are the windows of `series` and
+	// `workouts` (and of the matching MCP tools) when no --days is given.
+	DefaultSeriesDays  = 30
+	DefaultWorkoutDays = 14
+	// DefaultDashboardDays is the window of `dashboard`.
+	DefaultDashboardDays = 30
+)
+
 // Window is an inclusive range of local dates.
 type Window struct {
 	Period   string
@@ -127,8 +139,8 @@ func ResolveWindow(period string, days int, end, latest string, now time.Time) (
 	} else {
 		period = fmt.Sprintf("%d days", days)
 	}
-	if days > 3660 {
-		return Window{}, errors.New("window too large (max 3660 days)")
+	if days > MaxWindowDays {
+		return Window{}, fmt.Errorf("window too large (max %d days)", MaxWindowDays)
 	}
 	endDate := firstNonEmpty(end, latest, now.Format("2006-01-02"))
 	to, err := time.Parse("2006-01-02", endDate)
@@ -341,7 +353,7 @@ func workoutStat(ws, prev []healthdata.Workout) WorkoutStat {
 	st := WorkoutStat{ByType: []WorkoutTypeStat{}}
 	byType := map[string]*WorkoutTypeStat{}
 	hrWeighted := map[string][2]float64{}
-	zones := make([]float64, 5)
+	zones := make([]float64, healthdata.HeartRateZones)
 	hasZones := false
 	for _, w := range ws {
 		minutes := workoutMinutes(w)

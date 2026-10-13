@@ -16,6 +16,8 @@ struct HeartRateZoneBound: Equatable, Sendable {
 enum HeartRateAnalyzer {
     static let validRange: ClosedRange<Double> = 20...260
     static let maxSamples = 4_000
+    /// Longest accepted workout: 48 h (docs/DATA_SCHEMA.md, `duration_s` and `t`).
+    static let maxWorkoutSeconds: Double = 172_800
     static let minSampleSpacing = 5
     /// Gaps longer than this between two readings are not attributed to a zone.
     static let maxGapForZones: TimeInterval = 30
@@ -94,7 +96,7 @@ enum HeartRateAnalyzer {
                 zone: bound.zone,
                 lowerBpm: bound.lower,
                 upperBpm: bound.upper,
-                seconds: min(seconds[bound.zone - 1].rounded(), 172_800)
+                seconds: min(seconds[bound.zone - 1].rounded(), Self.maxWorkoutSeconds)
             )
         }
     }
@@ -112,7 +114,7 @@ enum HeartRateAnalyzer {
         var sums: [Int: (total: Double, count: Int)] = [:]
         for point in points {
             let offset = point.date.timeIntervalSince(start)
-            guard offset >= 0, offset <= min(duration, 172_800) else { continue }
+            guard offset >= 0, offset <= min(duration, Self.maxWorkoutSeconds) else { continue }
             let bucket = Int(offset) / bucketSize
             let current = sums[bucket] ?? (total: 0, count: 0)
             sums[bucket] = (total: current.total + point.bpm, count: current.count + 1)

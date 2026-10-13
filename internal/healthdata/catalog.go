@@ -68,9 +68,9 @@ var Catalog = []Metric{
 
 	{"heart", "resting_bpm", "Resting heart rate", "bpm", Avg, 20, 250, "restingHeartRate", &no},
 	{"heart", "walking_avg_bpm", "Walking heart rate", "bpm", Avg, 20, 250, "walkingHeartRateAverage", &no},
-	{"heart", "avg_bpm", "Average heart rate", "bpm", Avg, 20, 260, "heartRate", nil},
-	{"heart", "min_bpm", "Lowest heart rate", "bpm", Min, 20, 260, "heartRate", nil},
-	{"heart", "max_bpm", "Highest heart rate", "bpm", Max, 20, 260, "heartRate", nil},
+	{"heart", "avg_bpm", "Average heart rate", "bpm", Avg, MinBPM, MaxBPM, "heartRate", nil},
+	{"heart", "min_bpm", "Lowest heart rate", "bpm", Min, MinBPM, MaxBPM, "heartRate", nil},
+	{"heart", "max_bpm", "Highest heart rate", "bpm", Max, MinBPM, MaxBPM, "heartRate", nil},
 	{"heart", "hrv_sdnn_ms", "Heart rate variability (SDNN)", "ms", Avg, 0, 500, "heartRateVariabilitySDNN", &yes},
 	{"heart", "vo2max_ml_kg_min", "VO2 max", "ml/kg/min", Latest, 5, 100, "vo2Max", &yes},
 	{"heart", "recovery_1min_bpm", "Heart rate recovery (1 min)", "bpm", Avg, 0, 150, "heartRateRecoveryOneMinute", &yes},

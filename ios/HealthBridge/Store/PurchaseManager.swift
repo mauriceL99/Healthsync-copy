@@ -18,17 +18,14 @@ enum PurchaseError: LocalizedError {
 
 /// StoreKit 2 purchases for "HealthBridge Pro".
 ///
-/// Free: manual sync and the last 7 days of history.
-/// Pro: scheduled and on-new-data background sync, up to 365 days of history and workout
-/// heart-rate details.
+/// Free: manual sync and `HistoryWindow.freeLimit` of history.
+/// Pro: scheduled and on-new-data background sync, up to `HistoryWindow.proLimit` of history
+/// and workout heart-rate details.
 @MainActor
 final class PurchaseManager: ObservableObject {
-    nonisolated static let lifetimeProductID = "com.example.healthbridge.pro.lifetime"
-    nonisolated static let yearlyProductID = "com.example.healthbridge.pro.yearly"
-    nonisolated static let productIDs: Set<String> = [
-        "com.example.healthbridge.pro.lifetime",
-        "com.example.healthbridge.pro.yearly",
-    ]
+    nonisolated static let lifetimeProductID = AppIdentifiers.proLifetimeProduct
+    nonisolated static let yearlyProductID = AppIdentifiers.proYearlyProduct
+    nonisolated static let productIDs: Set<String> = [lifetimeProductID, yearlyProductID]
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var isPro: Bool

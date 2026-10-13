@@ -18,6 +18,16 @@ const (
 	MaxSleepSessions = 300
 	MaxHRSamples     = 4000
 	MaxWorkoutSecs   = 172800
+
+	// MinBPM and MaxBPM bound every heart-rate value (docs/DATA_SCHEMA.md).
+	MinBPM = 20
+	MaxBPM = 260
+	// HeartRateZones is the number of workout heart-rate zones (Z1–Z5).
+	HeartRateZones = 5
+	// minYear and maxYear reject nonsensical day keys: Apple Health has no data
+	// before the Unix epoch, and dates far in the future are corrupt input.
+	minYear = 1970
+	maxYear = 2200
 )
 
 var (
@@ -291,9 +301,9 @@ func sanitizeWorkout(m map[string]any, rep *Report) (Workout, error) {
 
 func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 	hr := &WorkoutHeartRate{
-		AvgBPM:          bounded(m, "avg_bpm", 20, 260, rep),
-		MinBPM:          bounded(m, "min_bpm", 20, 260, rep),
-		MaxBPM:          bounded(m, "max_bpm", 20, 260, rep),
+		AvgBPM:          bounded(m, "avg_bpm", MinBPM, MaxBPM, rep),
+		MinBPM:          bounded(m, "min_bpm", MinBPM, MaxBPM, rep),
+		MaxBPM:          bounded(m, "max_bpm", MinBPM, MaxBPM, rep),
 		Recovery1MinBPM: bounded(m, "recovery_1min_bpm", 0, 150, rep),
 		MaxReferenceBPM: bounded(m, "max_reference_bpm", 100, 240, rep),
 	}
@@ -304,8 +314,8 @@ func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 			lo, okL := num(z["lower_bpm"])
 			hi, okH := num(z["upper_bpm"])
 			secs, okS := num(z["seconds"])
-			if i >= 5 || !ok || !okZ || !okL || !okH || !okS || zone < 1 || zone > 5 || zone != math.Trunc(zone) ||
-				lo < 0 || hi > 300 || lo > hi || secs < 0 || secs > MaxWorkoutSecs {
+			if i >= HeartRateZones || !ok || !okZ || !okL || !okH || !okS || zone < 1 || zone > HeartRateZones || zone != math.Trunc(zone) ||
+				lo < 0 || hi > MaxBPM || lo > hi || secs < 0 || secs > MaxWorkoutSecs {
 				rep.DroppedValues++
 				continue
 			}
@@ -317,7 +327,7 @@ func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 			s, ok := item.(map[string]any)
 			t, okT := num(s["t"])
 			bpm, okB := num(s["bpm"])
-			if i >= MaxHRSamples || !ok || !okT || !okB || t < 0 || t > MaxWorkoutSecs || bpm < 20 || bpm > 260 {
+			if i >= MaxHRSamples || !ok || !okT || !okB || t < 0 || t > MaxWorkoutSecs || bpm < MinBPM || bpm > MaxBPM {
 				rep.DroppedValues++
 				continue
 			}
@@ -374,7 +384,7 @@ func validDate(s string) bool {
 		return false
 	}
 	t, err := time.Parse("2006-01-02", s)
-	return err == nil && t.Year() >= 1970 && t.Year() <= 2200
+	return err == nil && t.Year() >= minYear && t.Year() <= maxYear
 }
 
 func validTimestamp(s string) bool {

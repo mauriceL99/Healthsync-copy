@@ -118,7 +118,7 @@ struct SettingsView: View {
         } header: {
             Text("HealthBridge Pro")
         } footer: {
-            Text("Free: manual sync and the last 7 days. Pro: background sync, up to 365 days and workout heart-rate details.")
+            Text("Free: manual sync and the last \(HistoryWindow.freeLimit.title). Pro: background sync, up to \(HistoryWindow.proLimit.title) and workout heart-rate details.")
         }
     }
 
@@ -177,7 +177,7 @@ struct SettingsView: View {
 
     private var historyBinding: Binding<HistoryWindow> {
         Binding(
-            get: { model.settings.historyWindow.requiresPro && !purchases.isPro ? .week : model.settings.historyWindow },
+            get: { model.settings.historyWindow.requiresPro && !purchases.isPro ? .freeLimit : model.settings.historyWindow },
             set: { window in
                 if window.requiresPro && !purchases.isPro {
                     showPaywall = true

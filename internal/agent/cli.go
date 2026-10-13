@@ -333,8 +333,8 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 	case "series":
 		var w windowFlags
 		var o outputFlags
-		fs := newFlags(env, cmd, "series <metric> [--days 30] [--end DATE] [--format text|json]", &stateDir)
-		addWindow(fs, &w, "", 30)
+		fs := newFlags(env, cmd, "series <metric> [--days N] [--end DATE] [--format text|json]", &stateDir)
+		addWindow(fs, &w, "", DefaultSeriesDays)
 		addOutput(fs, &o, "text, json", "text")
 		metricName, flagArgs := splitPositional(args)
 		if err := fs.Parse(flagArgs); err != nil {
@@ -372,8 +372,8 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 	case "workouts":
 		var w windowFlags
 		var o outputFlags
-		fs := newFlags(env, cmd, "workouts [--days 14] [--end DATE] [--samples] [--format text|json]", &stateDir)
-		addWindow(fs, &w, "", 14)
+		fs := newFlags(env, cmd, "workouts [--days N] [--end DATE] [--samples] [--format text|json]", &stateDir)
+		addWindow(fs, &w, "", DefaultWorkoutDays)
 		addOutput(fs, &o, "text, json", "text")
 		samples := fs.Bool("samples", false, "include heart-rate samples (json only)")
 		if err := fs.Parse(args); err != nil {
@@ -430,8 +430,8 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 	case "dashboard":
 		var w windowFlags
 		var o outputFlags
-		fs := newFlags(env, cmd, "dashboard [--days 30] [--end DATE] [--out FILE]", &stateDir)
-		addWindow(fs, &w, "", 30)
+		fs := newFlags(env, cmd, "dashboard [--days N] [--end DATE] [--out FILE]", &stateDir)
+		addWindow(fs, &w, "", DefaultDashboardDays)
 		fs.StringVar(&o.out, "out", "", "output HTML file (default: <state-dir>/dashboard.html)")
 		fs.BoolVar(&o.force, "force", true, "overwrite the output file")
 		if err := fs.Parse(args); err != nil {

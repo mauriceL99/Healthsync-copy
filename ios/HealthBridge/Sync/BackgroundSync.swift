@@ -3,10 +3,11 @@ import Foundation
 import HealthKit
 import UIKit
 
-/// Identifiers must match `BGTaskSchedulerPermittedIdentifiers` in Info.plist.
+/// Identifiers must match `BGTaskSchedulerPermittedIdentifiers` in Info.plist, which
+/// expands `$(PRODUCT_BUNDLE_IDENTIFIER).refresh` / `.backfill` to the same values.
 enum BackgroundTaskID {
-    static let refresh = "com.example.healthbridge.refresh"
-    static let backfill = "com.example.healthbridge.backfill"
+    static let refresh = AppIdentifiers.refreshTask
+    static let backfill = AppIdentifiers.backfillTask
 }
 
 /// Calls a BGTask completion exactly once, whichever of "work finished" and

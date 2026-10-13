@@ -38,8 +38,9 @@ targets:
       - path: HealthBridge
     settings:
       base:
-        # Placeholder bundle identifier. Replace com.example with your own reverse domain
-        # (and update the product IDs, BGTask identifiers and Products.storekit accordingly).
+        # Placeholder bundle identifier. Replace com.example with your own reverse domain.
+        # Background-task and product IDs are derived from it (AppIdentifiers.swift);
+        # update Configuration/Products.storekit and App Store Connect to match.
         PRODUCT_BUNDLE_IDENTIFIER: com.example.healthbridge
         PRODUCT_NAME: HealthBridge
         INFOPLIST_FILE: HealthBridge/Info.plist

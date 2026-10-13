@@ -338,7 +338,7 @@ private struct ProTeaser: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("HealthBridge Pro")
                         .font(.headline)
-                    Text("Automatic background sync, 365 days of history, workout heart-rate details.")
+                    Text("Automatic background sync, \(HistoryWindow.proLimit.title) of history, workout heart-rate details.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)

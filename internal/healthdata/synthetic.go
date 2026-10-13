@@ -130,7 +130,7 @@ func syntheticWorkout(r *rand.Rand, day time.Time, i int, weekend bool) map[stri
 	end := start.Add(time.Duration(minutes * float64(time.Minute)))
 	maxRef := 190.0
 	var samples []any
-	zones := make([]float64, 5)
+	zones := make([]float64, HeartRateZones)
 	minB, maxB, sum := 300.0, 0.0, 0.0
 	n := 0
 	for t := 0.0; t <= minutes*60; t += 5 {
@@ -141,13 +141,13 @@ func syntheticWorkout(r *rand.Rand, day time.Time, i int, weekend bool) map[stri
 		pct := bpm / maxRef
 		zone := int(math.Floor((pct - 0.5) / 0.1))
 		if zone >= 0 {
-			zones[min(zone, 4)] += 5
+			zones[min(zone, HeartRateZones-1)] += 5
 		}
 		minB, maxB, sum = math.Min(minB, bpm), math.Max(maxB, bpm), sum+bpm
 		n++
 	}
 	var zoneList []any
-	for z := 0; z < 5; z++ {
+	for z := 0; z < HeartRateZones; z++ {
 		lo := maxRef * (0.5 + 0.1*float64(z))
 		zoneList = append(zoneList, map[string]any{"zone": z + 1, "lower_bpm": math.Round(lo), "upper_bpm": math.Round(lo + maxRef*0.1), "seconds": zones[z]})
 	}

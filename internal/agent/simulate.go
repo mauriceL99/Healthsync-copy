@@ -15,6 +15,10 @@ import (
 	"github.com/mauriceL99/Healthsync-copy/internal/protocol"
 )
 
+// simulatorChunkDays mirrors SyncPlan.chunkDays in the iOS app
+// (ios/HealthBridge/Sync/SyncEngine.swift) so uploads look like the real app's.
+const simulatorChunkDays = 30
+
 // SimulateOptions configures `healthbridge dev simulate-device`.
 type SimulateOptions struct {
 	PairingCode string
@@ -66,7 +70,7 @@ func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 		o.Days = 30
 	}
 	batch := healthdata.Synthetic(env.now(), o.Days, loc, o.Seed)
-	chunks := chunkBatch(batch, 30)
+	chunks := chunkBatch(batch, simulatorChunkDays)
 	var envelopes []protocol.Envelope
 	for i, chunk := range chunks {
 		plain, err := json.Marshal(chunk)
