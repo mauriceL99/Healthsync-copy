@@ -254,14 +254,20 @@ enum AppInfo {
     }
 
     /// Hardware identifier from `utsname().machine`, e.g. `iPhone16,1`. Returns nil when it
-    /// does not match `^[A-Za-z]{2,16}[0-9]{0,3}(,[0-9]{1,3})?$` (e.g. `arm64` in the Simulator).
+    /// does not match `^[A-Za-z]{2,16}[0-9]{0,3}(,[0-9]{1,3})?$`. In the Simulator `machine`
+    /// is the host CPU (`arm64` – which would even match the pattern – or `x86_64`), so the
+    /// simulated model identifier is used instead, or nothing.
     static var deviceModel: String? {
+        #if targetEnvironment(simulator)
+        let machine = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? ""
+        #else
         var systemInfo = utsname()
         uname(&systemInfo)
         let machine = withUnsafeBytes(of: systemInfo.machine) { buffer -> String in
             let bytes = buffer.prefix { $0 != 0 }
             return String(decoding: bytes, as: UTF8.self)
         }
+        #endif
         return isValidDeviceModel(machine) ? machine : nil
     }
 

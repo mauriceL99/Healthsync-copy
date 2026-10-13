@@ -344,20 +344,26 @@ enum MetricCatalog {
         all.first { $0.group == group && $0.key == key }
     }
 
+    struct FieldInfo: Identifiable {
+        let name: String
+        let symbol: String
+        var id: String { name }
+    }
+
     /// Workout fields shown on the metrics screen (they are part of `workouts[]`).
-    static let workoutFields: [(name: String, symbol: String)] = [
-        ("Type, start, end, duration", "clock"),
-        ("Active energy", "flame"),
-        ("Distance", "point.topleft.down.to.point.bottomright.curvepath"),
-        ("Elevation gain", "mountain.2"),
-        ("Indoor / outdoor, source", "house"),
-        ("Average, minimum and maximum heart rate", "heart"),
+    static let workoutFields: [FieldInfo] = [
+        FieldInfo(name: "Type, start, end, duration", symbol: "clock"),
+        FieldInfo(name: "Active energy", symbol: "flame"),
+        FieldInfo(name: "Distance", symbol: "point.topleft.down.to.point.bottomright.curvepath"),
+        FieldInfo(name: "Elevation gain", symbol: "mountain.2"),
+        FieldInfo(name: "Indoor / outdoor, source", symbol: "house"),
+        FieldInfo(name: "Average, minimum and maximum heart rate", symbol: "heart"),
     ]
 
-    static let workoutHeartRateDetailFields: [(name: String, symbol: String)] = [
-        ("Heart-rate zones (5 zones)", "chart.bar.fill"),
-        ("Heart-rate curve (one point per 5 s)", "waveform.path"),
-        ("Heart-rate recovery after 1 minute", "arrow.down.heart"),
+    static let workoutHeartRateDetailFields: [FieldInfo] = [
+        FieldInfo(name: "Heart-rate zones (5 zones)", symbol: "chart.bar.fill"),
+        FieldInfo(name: "Heart-rate curve (one point per 5 s)", symbol: "waveform.path"),
+        FieldInfo(name: "Heart-rate recovery after 1 minute", symbol: "arrow.down.heart"),
     ]
 
     // MARK: Builders

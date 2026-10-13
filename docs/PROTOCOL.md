@@ -145,6 +145,26 @@ Rules:
 * The relay deletes envelopes after an ack or after its TTL (default 30 days).
 
 `Device` = `{"device_id","name","platform","app_version","linked_at","last_seen_at"}`.
+
+### Error codes
+
+| HTTP | `code` | Meaning |
+| --- | --- | --- |
+| 400 | `invalid_request`, `invalid_envelope`, `unexpected_body` | Malformed request |
+| 401 | `unauthenticated` | Missing or malformed `HB-*` headers |
+| 401 | `bad_signature` | Signature does not verify |
+| 401 | `stale_request` | Timestamp outside ±300 s (check the device clock) |
+| 401 | `replayed_request` | Nonce already used |
+| 401 | `unknown_account`, `unknown_device` | Key ID is not registered (device: pair again) |
+| 403 | `invalid_pairing_secret` | Pairing secret does not match |
+| 403 | `wrong_account` | Envelope account differs from the device's account |
+| 403 | `registration_token_required` | Relay requires `HB-Registration-Token` for new accounts |
+| 404 | `unknown_account` | `POST /v1/devices` for an account that is not registered |
+| 409 | `account_exists`, `device_already_linked` | Conflict |
+| 410 | `device_unlinked` | Device was unlinked; the app returns to the unpaired state |
+| 413 | `body_too_large` | Body exceeds the endpoint limit |
+| 429 | `rate_limited` | Too many requests |
+| 500 | `internal_error` | Server error |
 `StoredEnvelope` = `Envelope` plus `{"seq": int, "received_at": timestamp}`.
 
 ## 6. Envelope

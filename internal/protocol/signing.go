@@ -26,6 +26,9 @@ const (
 	NonceWindow = 600 * time.Second
 )
 
+// ErrStaleRequest reports a timestamp outside MaxClockSkew (usually a wrong device clock).
+var ErrStaleRequest = errors.New("request timestamp outside the allowed window; check the device clock")
+
 // AgentKey returns the HB-Key value for an agent account.
 func AgentKey(account string) string { return "agent:" + account }
 
@@ -93,7 +96,7 @@ func (h SignedHeaders) Verify(pub ed25519.PublicKey, method, pathAndQuery string
 	}
 	skew := now.Sub(time.Unix(ts, 0))
 	if skew > MaxClockSkew || skew < -MaxClockSkew {
-		return errors.New("request timestamp outside the allowed window")
+		return ErrStaleRequest
 	}
 	sig, err := DecodeB64(h.Signature, ed25519.SignatureSize)
 	if err != nil {

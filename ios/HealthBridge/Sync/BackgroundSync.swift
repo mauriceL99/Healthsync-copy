@@ -48,6 +48,7 @@ final class BackgroundSync {
     private var observerSyncTask: Task<Void, Never>?
     private var pendingObserverCompletions: [() -> Void] = []
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var deliveryClearedThisLaunch = false
 
     private var health: HealthKitService { .shared }
 
@@ -73,8 +74,10 @@ final class BackgroundSync {
     /// Applies the current sync mode: schedules or cancels refresh tasks and starts or
     /// stops HealthKit observers. Safe to call often.
     func applyConfiguration() {
+        // Keychain not readable (e.g. launched before the first unlock): keep the current setup.
+        guard let paired = PairingStore.isPairedIfKnown() else { return }
         let settings = SettingsStore.loadSettings()
-        let active = PairingStore.isPaired && SettingsStore.onboardingComplete
+        let active = paired && SettingsStore.onboardingComplete
         let mode = active ? settings.effectiveMode(isPro: EntitlementCache.isPro) : .manual
 
         switch mode {
@@ -83,16 +86,22 @@ final class BackgroundSync {
             cancelRefresh()
         case .scheduled:
             stopObservers()
-            scheduleRefresh(after: settings.interval.seconds)
+            scheduleRefresh(at: nextRefreshDate(interval: settings.interval.seconds))
         case .onNewData:
             startObservers(categories: settings.categories)
-            scheduleRefresh(after: onNewDataFallbackInterval)
+            scheduleRefresh(at: nextRefreshDate(interval: onNewDataFallbackInterval))
         }
     }
 
-    func scheduleRefresh(after interval: TimeInterval) {
+    /// The next run is anchored to the last successful sync, so opening the app does not
+    /// keep pushing the background sync further out.
+    private func nextRefreshDate(interval: TimeInterval) -> Date {
+        let anchor = SettingsStore.loadState().lastSuccessfulSync ?? Date()
+        return max(anchor.addingTimeInterval(interval), Date(timeIntervalSinceNow: 5 * 60))
+    }
+
+    func scheduleRefresh(at earliest: Date) {
         let request = BGAppRefreshTaskRequest(identifier: BackgroundTaskID.refresh)
-        let earliest = Date(timeIntervalSinceNow: interval)
         request.earliestBeginDate = earliest
         do {
             try BGTaskScheduler.shared.submit(request)
@@ -132,10 +141,12 @@ final class BackgroundSync {
 
     private func handleAppRefresh(_ task: BGTask) {
         let completion = TaskCompletion(task)
-        // Always queue the next run first.
+        // Always queue the next run first (in case this one expires), then again after the
+        // sync so the next run is anchored to the new "last sync".
         applyConfiguration()
         let work = Task { @MainActor in
             let success = await self.runSync(trigger: .scheduled, requiresPro: true)
+            self.applyConfiguration()
             completion.complete(success: success)
         }
         task.expirationHandler = {
@@ -187,10 +198,21 @@ final class BackgroundSync {
         if !observerQueries.isEmpty && observedCategories == categories {
             return
         }
-        stopObservers()
-        observedCategories = categories
         let store = health.store
-        for type in health.observerTypes(for: categories) {
+        observerQueries.forEach { store.stop($0) }
+        observerQueries.removeAll()
+
+        let wanted = health.observerTypes(for: categories)
+        // Drop registrations for categories that are no longer shared (they may survive
+        // from an earlier launch). Never disable-all here: it could race the enables below.
+        let unwanted = health.observerTypes(for: Set(MetricCategory.allCases)).filter { !wanted.contains($0) }
+        for type in unwanted {
+            store.disableBackgroundDelivery(for: type) { _, _ in }
+        }
+        observedCategories = categories
+        deliveryClearedThisLaunch = true
+
+        for type in wanted {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completionHandler, error in
                 if error != nil {
                     completionHandler()
@@ -207,7 +229,10 @@ final class BackgroundSync {
     }
 
     private func stopObservers() {
-        guard !observerQueries.isEmpty || !observedCategories.isEmpty else { return }
+        // Background-delivery registrations survive relaunches, so clear them at least once
+        // per launch even if no observer is running in this process.
+        guard !observerQueries.isEmpty || !observedCategories.isEmpty || !deliveryClearedThisLaunch else { return }
+        deliveryClearedThisLaunch = true
         let store = health.store
         observerQueries.forEach { store.stop($0) }
         observerQueries.removeAll()

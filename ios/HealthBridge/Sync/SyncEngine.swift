@@ -157,7 +157,6 @@ actor SyncEngine {
 
         let startedAt = Date()
         SettingsStore.updateState { $0.lastAttempt = startedAt }
-        var plannedKind: EnvelopeKind?
         do {
             let (report, plan) = try await perform(
                 trigger: trigger,
@@ -165,7 +164,6 @@ actor SyncEngine {
                 forceBackfill: forceBackfill,
                 progress: progress
             )
-            plannedKind = plan.kind
             SettingsStore.updateState { state in
                 state.lastSuccessfulSync = report.finishedAt
                 state.lastError = nil
@@ -198,7 +196,6 @@ actor SyncEngine {
                     date: startedAt,
                     event: .sync,
                     trigger: trigger,
-                    kind: plannedKind,
                     duration: Date().timeIntervalSince(startedAt),
                     errorMessage: syncError.errorDescription ?? "Sync failed."
                 ))
@@ -209,14 +206,7 @@ actor SyncEngine {
 
     /// The relay reported that the agent unlinked this device: go back to unpaired.
     private func handleUnlinked() {
-        PairingStore.delete()
-        SettingsStore.resetPairingState()
-        log.append(ActivityLogEntry(
-            date: Date(),
-            event: .unlinkedByAgent,
-            errorMessage: RelayError.deviceUnlinked.errorDescription
-        ))
-        NotificationCenter.default.post(name: Self.pairingDidChangeNotification, object: nil)
+        PairingLifecycle.markUnlinkedByAgent(log: log)
     }
 
     private func perform(
@@ -320,15 +310,41 @@ actor SyncEngine {
     }
 
     /// Unlinks this device at the relay (best effort) and wipes local pairing data.
-    func unpair() async {
+    /// Returns false if the relay could not be reached (local data is wiped anyway).
+    @discardableResult
+    func unpair() async -> Bool {
+        var reachedRelay = false
         if let pairing = PairingStore.load(),
            let signingKey = try? DeviceIdentityStore.loadSigningKey(),
            let client = try? RelayClient(relay: pairing.relay) {
-            try? await client.unlinkDevice(deviceID: pairing.deviceID, signingKey: signingKey)
+            do {
+                try await client.unlinkDevice(deviceID: pairing.deviceID, signingKey: signingKey)
+                reachedRelay = true
+            } catch RelayError.deviceUnlinked {
+                reachedRelay = true
+            } catch {
+                reachedRelay = false
+            }
         }
         KeychainStore.deleteAll()
         SettingsStore.resetPairingState()
         log.append(ActivityLogEntry(date: Date(), event: .unpaired))
         NotificationCenter.default.post(name: Self.pairingDidChangeNotification, object: nil)
+        return reachedRelay
+    }
+}
+
+/// Shared handling when the agent has unlinked this iPhone (`410 device_unlinked`).
+enum PairingLifecycle {
+    static func markUnlinkedByAgent(log: ActivityLogStore = .shared) {
+        guard PairingStore.isPaired else { return }
+        PairingStore.delete()
+        SettingsStore.resetPairingState()
+        log.append(ActivityLogEntry(
+            date: Date(),
+            event: .unlinkedByAgent,
+            errorMessage: RelayError.deviceUnlinked.errorDescription
+        ))
+        NotificationCenter.default.post(name: SyncEngine.pairingDidChangeNotification, object: nil)
     }
 }

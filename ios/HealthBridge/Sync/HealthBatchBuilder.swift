@@ -224,7 +224,7 @@ struct HealthBatchBuilder {
         if let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool {
             record.indoor = indoor
         }
-        record.source = Self.sourceName(workout.sourceRevision.source.name)
+        record.source = Self.sourceLabel(for: workout.sourceRevision)
 
         // Basic heart-rate statistics are always included; details only for Pro.
         let stats = health.heartRateStatistics(in: workout)
@@ -269,6 +269,20 @@ struct HealthBatchBuilder {
             }
         }
         return nil
+    }
+
+    /// A non-personal label for the workout's source. Apple's own sources carry the
+    /// user's device name (for example "Maurice's Apple Watch"), so they are reduced to
+    /// the product family; names of third-party apps (for example "Strava") are kept.
+    static func sourceLabel(for revision: HKSourceRevision) -> String? {
+        if revision.source.bundleIdentifier.hasPrefix("com.apple.") {
+            let product = revision.productType ?? ""
+            if product.hasPrefix("Watch") { return "Apple Watch" }
+            if product.hasPrefix("iPhone") { return "iPhone" }
+            if product.hasPrefix("iPad") { return "iPad" }
+            return "Apple Health"
+        }
+        return sourceName(revision.source.name)
     }
 
     /// The HKSource name truncated to 64 characters; omitted unless it matches

@@ -176,7 +176,7 @@ final class HealthKitService: @unchecked Sendable {
             return true
         }
         let nsError = error as NSError
-        return nsError.domain == HKErrorDomain && nsError.code == HKError.Code.errorDatabaseInaccessible.rawValue
+        return nsError.domain == HKError.errorDomain && nsError.code == HKError.Code.errorDatabaseInaccessible.rawValue
     }
 
     static func isNoData(_ error: Error) -> Bool {
@@ -184,7 +184,7 @@ final class HealthKitService: @unchecked Sendable {
             return true
         }
         let nsError = error as NSError
-        return nsError.domain == HKErrorDomain && nsError.code == HKError.Code.errorNoData.rawValue
+        return nsError.domain == HKError.errorDomain && nsError.code == HKError.Code.errorNoData.rawValue
     }
 
     private static func mapped(_ error: Error) -> Error {

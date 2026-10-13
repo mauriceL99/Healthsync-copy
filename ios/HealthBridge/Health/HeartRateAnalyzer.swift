@@ -5,6 +5,12 @@ struct HeartRatePoint: Equatable, Sendable {
     let bpm: Double
 }
 
+struct HeartRateZoneBound: Equatable, Sendable {
+    let zone: Int
+    let lower: Double
+    let upper: Double
+}
+
 /// Workout heart-rate details: zones, downsampled curve and 1-minute recovery
 /// (docs/DATA_SCHEMA.md, "Workouts"). Pure logic, unit tested.
 enum HeartRateAnalyzer {
@@ -32,15 +38,15 @@ enum HeartRateAnalyzer {
     }
 
     /// Zone boundaries in bpm: Z1 50–60 %, Z2 60–70 %, Z3 70–80 %, Z4 80–90 %, Z5 90–100 %.
-    static func zoneBounds(maxReference: Double) -> [(zone: Int, lower: Double, upper: Double)] {
+    static func zoneBounds(maxReference: Double) -> [HeartRateZoneBound] {
         let edges = zonePercentages.map { ($0 * maxReference).rounded() }
         return (1...5).map { zone in
-            (zone: zone, lower: edges[zone - 1], upper: edges[zone])
+            HeartRateZoneBound(zone: zone, lower: edges[zone - 1], upper: edges[zone])
         }
     }
 
     /// Zone (1–5) for a heart rate, or nil below zone 1. Values above the maximum count as Z5.
-    static func zone(for bpm: Double, bounds: [(zone: Int, lower: Double, upper: Double)]) -> Int? {
+    static func zone(for bpm: Double, bounds: [HeartRateZoneBound]) -> Int? {
         for bound in bounds.reversed() where bpm >= bound.lower {
             return bound.zone
         }

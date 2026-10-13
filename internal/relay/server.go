@@ -233,7 +233,9 @@ func (s *Server) authenticate(r *http.Request, mode authMode, body []byte) (cont
 		}
 		nonceKey = h.Key + ":" + req.DeviceSig
 	}
-	if err := h.Verify(pub, r.Method, r.URL.RequestURI(), body, now); err != nil {
+	if err := h.Verify(pub, r.Method, r.URL.RequestURI(), body, now); errors.Is(err, protocol.ErrStaleRequest) {
+		return nil, fail(http.StatusUnauthorized, "stale_request", err.Error())
+	} else if err != nil {
 		return nil, fail(http.StatusUnauthorized, "bad_signature", err.Error())
 	}
 	if err := s.store.UseNonce(ctx, nonceKey, h.Nonce, now); errors.Is(err, ErrReplay) {

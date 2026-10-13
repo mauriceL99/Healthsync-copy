@@ -181,4 +181,14 @@ enum PairingStore {
     static var isPaired: Bool {
         load() != nil
     }
+
+    /// Like `isPaired`, but nil when the keychain cannot be read right now (for example
+    /// before the first unlock after a reboot), so callers can avoid acting on a guess.
+    static func isPairedIfKnown() -> Bool? {
+        do {
+            return try KeychainStore.data(for: .pairing) != nil
+        } catch {
+            return nil
+        }
+    }
 }

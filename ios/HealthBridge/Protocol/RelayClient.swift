@@ -333,15 +333,18 @@ struct RelayClient: Sendable {
         let code = body?.error.code.map { String($0.prefix(64)) }
         let message = body?.error.message.map { HB1.cleanLabel($0, maxLength: 200) }
 
-        if status == 410 || code == "device_unlinked" {
+        // Codes are defined in docs/PROTOCOL.md §5 ("Error codes").
+        // unknown_device means the relay no longer knows this device (e.g. its database
+        // was reset), which is handled like an unlink: the user pairs again.
+        if status == 410 || code == "device_unlinked" || code == "unknown_device" {
             return .deviceUnlinked
         }
         switch code {
         case "device_already_linked":
             return .deviceAlreadyLinked
-        case "invalid_secret", "invalid_pairing", "pairing_failed", "unknown_account", "account_not_found":
+        case "invalid_pairing_secret", "unknown_account":
             return .pairingRejected(message)
-        case "stale_request", "invalid_timestamp", "timestamp_out_of_range", "clock_skew":
+        case "stale_request":
             return .clockSkew
         default:
             break
