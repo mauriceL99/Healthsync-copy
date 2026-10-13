@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS envelopes (
   dropped      INTEGER NOT NULL DEFAULT 0,
   error        TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS quarantine (
+  seq             INTEGER PRIMARY KEY,
+  envelope        TEXT NOT NULL,
+  error           TEXT NOT NULL,
+  first_failed_at TEXT NOT NULL,
+  last_attempt_at TEXT NOT NULL,
+  attempts        INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -81,11 +89,12 @@ type EnvelopeResult struct {
 	ErrorMsg string
 }
 
-// Apply merges a sanitized batch into the store and logs the envelope.
-func (d *DB) Apply(ctx context.Context, b healthdata.Batch, res EnvelopeResult, now time.Time) error {
+// Apply merges a sanitized batch into the store and logs the envelope. It
+// returns how many stored days were unreadable and therefore replaced.
+func (d *DB) Apply(ctx context.Context, b healthdata.Batch, res EnvelopeResult, now time.Time) (repaired int, err error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 	stamp := protocol.FormatTime(now)
@@ -93,56 +102,118 @@ func (d *DB) Apply(ctx context.Context, b healthdata.Batch, res EnvelopeResult, 
 		var existing string
 		err := tx.QueryRowContext(ctx, `SELECT data FROM days WHERE date = ?`, date).Scan(&existing)
 		merged := day
-		if err == nil {
+		switch {
+		case err == nil:
 			var old healthdata.Day
 			if json.Unmarshal([]byte(existing), &old) == nil {
 				merged = healthdata.MergeDay(old, day)
+			} else {
+				// A corrupt stored day cannot be merged. Replacing it with the
+				// fresh data heals the store; the caller reports the count.
+				repaired++
 			}
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			return err
+		case !errors.Is(err, sql.ErrNoRows):
+			return 0, err
 		}
 		data, err := json.Marshal(merged)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO days(date, data, updated_at) VALUES(?,?,?)
 			ON CONFLICT(date) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`, date, string(data), stamp); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	loc := b.Location()
 	for _, w := range b.Workouts {
 		data, err := json.Marshal(w)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		date := w.StartTime().In(loc).Format("2006-01-02")
 		if _, err := tx.ExecContext(ctx, `INSERT INTO workouts(id, date, type, start, data, updated_at) VALUES(?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET date = excluded.date, type = excluded.type, start = excluded.start, data = excluded.data, updated_at = excluded.updated_at`,
 			w.ID, date, w.Type, w.Start, string(data), stamp); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if b.Timezone != "" {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO meta(key, value) VALUES('timezone', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, b.Timezone); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if err := logEnvelope(ctx, tx, res, stamp); err != nil {
-		return err
+		return 0, err
 	}
-	return tx.Commit()
+	return repaired, tx.Commit()
 }
 
-// Location returns the device time zone of the latest batch (UTC if unknown).
-func (d *DB) Location(ctx context.Context) *time.Location {
+// Location returns the device time zone of the latest batch. It is UTC when
+// no batch named one (or the zone is unknown to this system's tz database);
+// database errors are returned, not hidden behind UTC.
+func (d *DB) Location(ctx context.Context) (*time.Location, error) {
 	var tz string
-	if d.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'timezone'`).Scan(&tz) == nil {
-		if loc, err := time.LoadLocation(tz); err == nil {
-			return loc
-		}
+	err := d.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'timezone'`).Scan(&tz)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.UTC, nil
 	}
-	return time.UTC
+	if err != nil {
+		return nil, fmt.Errorf("read time zone: %w", err)
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.UTC, nil
+	}
+	return loc, nil
+}
+
+// QuarantinedEnvelope is an envelope that could not be processed. It is kept
+// locally (ciphertext only) so nothing is lost when the relay copy is deleted.
+type QuarantinedEnvelope struct {
+	Envelope protocol.StoredEnvelope
+	Error    string
+	Attempts int
+}
+
+// Quarantine stores or updates an envelope that failed to process.
+func (d *DB) Quarantine(ctx context.Context, e protocol.StoredEnvelope, reason string, now time.Time) error {
+	data, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	stamp := protocol.FormatTime(now)
+	_, err = d.db.ExecContext(ctx, `INSERT INTO quarantine(seq, envelope, error, first_failed_at, last_attempt_at, attempts) VALUES(?,?,?,?,?,1)
+		ON CONFLICT(seq) DO UPDATE SET error = excluded.error, last_attempt_at = excluded.last_attempt_at, attempts = attempts + 1`,
+		e.Seq, string(data), reason, stamp, stamp)
+	return err
+}
+
+// Quarantined lists quarantined envelopes in sequence order.
+func (d *DB) Quarantined(ctx context.Context) ([]QuarantinedEnvelope, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT envelope, error, attempts FROM quarantine ORDER BY seq`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []QuarantinedEnvelope
+	for rows.Next() {
+		var raw string
+		var q QuarantinedEnvelope
+		if err := rows.Scan(&raw, &q.Error, &q.Attempts); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &q.Envelope); err != nil {
+			return nil, fmt.Errorf("corrupt quarantined envelope: %w", err)
+		}
+		out = append(out, q)
+	}
+	return out, rows.Err()
+}
+
+// Release removes an envelope from quarantine after it was processed.
+func (d *DB) Release(ctx context.Context, seq int64) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM quarantine WHERE seq = ?`, seq)
+	return err
 }
 
 // LogFailure records an envelope that could not be processed.
@@ -198,7 +269,7 @@ func (d *DB) Workouts(ctx context.Context, from, to string) ([]healthdata.Workou
 		}
 		var w healthdata.Workout
 		if err := json.Unmarshal([]byte(data), &w); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("corrupt workout: %w", err)
 		}
 		out = append(out, w)
 	}
@@ -225,12 +296,13 @@ func (d *DB) WorkoutDates(ctx context.Context, from, to string) (map[string]stri
 
 // Coverage describes the stored date range.
 type Coverage struct {
-	FirstDate string `json:"first_date,omitempty"`
-	LastDate  string `json:"last_date,omitempty"`
-	Days      int    `json:"days"`
-	Workouts  int    `json:"workouts"`
-	Envelopes int    `json:"envelopes_processed"`
-	Failed    int    `json:"envelopes_failed"`
+	FirstDate   string `json:"first_date,omitempty"`
+	LastDate    string `json:"last_date,omitempty"`
+	Days        int    `json:"days"`
+	Workouts    int    `json:"workouts"`
+	Envelopes   int    `json:"envelopes_processed"`
+	Failed      int    `json:"envelopes_failed"`
+	Quarantined int    `json:"envelopes_in_quarantine"`
 }
 
 // Coverage reports what is stored locally.
@@ -244,7 +316,10 @@ func (d *DB) Coverage(ctx context.Context) (Coverage, error) {
 	if err := d.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workouts`).Scan(&c.Workouts); err != nil {
 		return c, err
 	}
-	err := d.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(status != 'ok'), 0) FROM envelopes`).Scan(&c.Envelopes, &c.Failed)
+	if err := d.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(status != 'ok'), 0) FROM envelopes`).Scan(&c.Envelopes, &c.Failed); err != nil {
+		return c, err
+	}
+	err := d.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quarantine`).Scan(&c.Quarantined)
 	return c, err
 }
 

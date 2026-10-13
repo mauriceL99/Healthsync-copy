@@ -68,12 +68,21 @@ type OnboardOptions struct {
 func Onboard(ctx context.Context, env Env, s *State, o OnboardOptions) error {
 	now := env.now()
 	if s.Initialized() && o.Rotate {
+		// Relay, name and registration token carry over unless given again. Check
+		// them before archiving, so a bad --relay cannot leave no identity at all.
+		o.Relay = strings.TrimRight(firstNonEmpty(o.Relay, s.Config.Relay), "/")
+		if err := protocol.ValidateRelayURL(o.Relay); err != nil {
+			return err
+		}
+		o.Name = firstNonEmpty(o.Name, s.Config.Name)
+		o.RelayToken = firstNonEmpty(o.RelayToken, s.Config.RelayToken)
 		backup, err := s.ArchiveIdentity(now)
 		if err != nil {
 			return fmt.Errorf("archive old identity: %w", err)
 		}
 		fmt.Fprintf(env.Out, "Previous identity archived to %s\n", backup)
-		// A new account starts with an empty relay mailbox; local health data is kept.
+		// The new account starts with an empty relay mailbox (fetch position 0);
+		// local health data is kept.
 		s.Config = Config{}
 	}
 	var id *Identity
@@ -92,7 +101,7 @@ func Onboard(ctx context.Context, env Env, s *State, o OnboardOptions) error {
 			s.Config.RelayToken = o.RelayToken
 		}
 		if o.NewPairingCode {
-			if err := newPairingCode(s, id); err != nil {
+			if err := newPairingCode(s); err != nil {
 				return err
 			}
 			fmt.Fprintln(env.Out, "Created a new pairing code; the previous QR code no longer works.")
@@ -126,18 +135,22 @@ func Onboard(ctx context.Context, env Env, s *State, o OnboardOptions) error {
 		if err := s.SaveIdentity(id); err != nil {
 			return err
 		}
-		if err := newPairingCode(s, id); err != nil {
+		if err := newPairingCode(s); err != nil {
 			return err
 		}
 	}
 	if err := s.Save(); err != nil {
 		return err
 	}
+	// Create the private (0600) database and its schema now, so the state
+	// directory is complete before the first fetch.
 	db, err := OpenDB(s.DBPath())
 	if err != nil {
 		return err
 	}
-	db.Close()
+	if err := db.Close(); err != nil {
+		return err
+	}
 	if o.Offline {
 		fmt.Fprintln(env.Out, "Offline mode: the identity was not registered at the relay. Run onboard again without --offline before pairing.")
 	} else {
@@ -148,17 +161,22 @@ func Onboard(ctx context.Context, env Env, s *State, o OnboardOptions) error {
 	return showPairing(env, s, o.QRInTerminal)
 }
 
-func newPairingCode(s *State, id *Identity) error {
-	code, err := protocol.Pairing{
+func newPairingCode(s *State) error {
+	p := protocol.Pairing{
 		V: protocol.Version, Relay: s.Config.Relay, Account: s.Config.Account,
 		Sig: s.Config.SigPub, Enc: s.Config.EncPub, Secret: protocol.B64U(protocol.RandomBytes(32)), Name: s.Config.Name,
-	}.Encode()
+	}
+	code, err := p.Encode()
 	if err != nil {
 		return err
 	}
-	p, _ := protocol.DecodePairing(code)
-	s.Config.PairingCode = code
-	s.Config.SafetyCode, _ = p.SafetyCode()
+	// The safety code is what the user compares against the phone to rule out a
+	// swapped QR code, so it must never silently end up empty.
+	safety, err := p.SafetyCode()
+	if err != nil {
+		return fmt.Errorf("derive safety code: %w", err)
+	}
+	s.Config.PairingCode, s.Config.SafetyCode = code, safety
 	s.Config.Registered = false
 	return nil
 }
@@ -173,8 +191,16 @@ func register(ctx context.Context, env Env, s *State, id *Identity) error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.RegisterAccount(ctx, s.Config.Account, id.Sig.Public().(ed25519.PublicKey), id.Enc.PublicKey().Bytes(), protocol.PairingHash(secret), s.Config.Name); err != nil {
+	created, err := c.RegisterAccount(ctx, s.Config.Account, id.Sig.Public().(ed25519.PublicKey), id.Enc.PublicKey().Bytes(), protocol.PairingHash(secret), s.Config.Name)
+	if err != nil {
 		return fmt.Errorf("register at relay %s: %w", s.Config.Relay, err)
+	}
+	if created && s.Config.LastSeq != 0 {
+		// The relay did not know this account any more (e.g. its database was
+		// reset), so its sequence numbers start at 1 again. Keeping the old fetch
+		// position would skip every new upload until they expire.
+		fmt.Fprintf(env.Err, "The relay registered this account anew; resetting the fetch position (was %d).\n", s.Config.LastSeq)
+		s.Config.LastSeq = 0
 	}
 	s.Config.Registered = true
 	return s.Save()
@@ -231,15 +257,18 @@ type FetchOptions struct {
 
 // FetchResult summarizes one fetch run.
 type FetchResult struct {
-	Envelopes int    `json:"envelopes"`
-	Failed    int    `json:"failed"`
-	Days      int    `json:"days_updated"`
-	Workouts  int    `json:"workouts_updated"`
-	Dropped   int    `json:"values_dropped"`
-	Acked     int64  `json:"deleted_on_relay"`
-	LastSeq   int64  `json:"last_seq"`
-	FirstDate string `json:"first_date,omitempty"`
-	LastDate  string `json:"last_date,omitempty"`
+	Envelopes    int    `json:"envelopes"`
+	Failed       int    `json:"failed"`
+	Recovered    int    `json:"recovered_from_quarantine"`
+	Quarantined  int    `json:"in_quarantine"`
+	RepairedDays int    `json:"repaired_days"`
+	Days         int    `json:"days_updated"`
+	Workouts     int    `json:"workouts_updated"`
+	Dropped      int    `json:"values_dropped"`
+	Acked        int64  `json:"deleted_on_relay"`
+	LastSeq      int64  `json:"last_seq"`
+	FirstDate    string `json:"first_date,omitempty"`
+	LastDate     string `json:"last_date,omitempty"`
 }
 
 // Fetch downloads, decrypts, validates and stores all pending envelopes.
@@ -270,33 +299,64 @@ func Fetch(ctx context.Context, env Env, s *State, o FetchOptions) (res FetchRes
 		return res, err
 	}
 	defer db.Close()
-	cursor := s.Config.LastSeq
 	days := map[string]bool{}
+	// process stores one envelope. Envelopes that cannot be opened or parsed go
+	// to the local quarantine: the relay copy is acked like any other, so a bad
+	// upload cannot block the mailbox, but the ciphertext is kept and retried on
+	// every fetch (an updated CLI may read what this one cannot).
+	process := func(e protocol.StoredEnvelope) (failure error, err error) {
+		r := EnvelopeResult{Seq: e.Seq, ID: e.ID, Kind: e.Kind, Created: e.CreatedAt, Status: "ok"}
+		batch, rep, perr := openEnvelope(e.Envelope, s.Config.Account, id.Enc)
+		if perr != nil {
+			r.Status, r.ErrorMsg = "error", perr.Error()
+			if err := db.Quarantine(ctx, e, perr.Error(), now); err != nil {
+				return perr, err
+			}
+			return perr, db.LogFailure(ctx, r, now)
+		}
+		r.Report = rep
+		repaired, err := db.Apply(ctx, batch, r, now)
+		if err != nil {
+			return nil, err
+		}
+		res.RepairedDays += repaired
+		for d := range batch.Days {
+			days[d] = true
+		}
+		res.Workouts += len(batch.Workouts)
+		res.Dropped += rep.DroppedDays + rep.DroppedValues + rep.DroppedWorkouts
+		return nil, nil
+	}
+	quarantined, err := db.Quarantined(ctx)
+	if err != nil {
+		return res, err
+	}
+	for _, q := range quarantined {
+		failure, err := process(q.Envelope)
+		if err != nil {
+			return res, err
+		}
+		if failure == nil {
+			if err := db.Release(ctx, q.Envelope.Seq); err != nil {
+				return res, err
+			}
+			res.Recovered++
+		}
+	}
+	cursor := s.Config.LastSeq
 	for {
 		envelopes, more, err := c.Envelopes(ctx, cursor, 50)
 		if err != nil {
 			return res, fmt.Errorf("fetch envelopes: %w", err)
 		}
 		for _, e := range envelopes {
-			r := EnvelopeResult{Seq: e.Seq, ID: e.ID, Kind: e.Kind, Created: e.CreatedAt, Status: "ok"}
-			batch, rep, perr := openEnvelope(e.Envelope, s.Config.Account, id.Enc)
-			if perr != nil {
-				r.Status, r.ErrorMsg = "error", perr.Error()
+			failure, err := process(e)
+			if err != nil {
+				return res, err
+			}
+			if failure != nil {
 				res.Failed++
-				if err := db.LogFailure(ctx, r, now); err != nil {
-					return res, err
-				}
-				fmt.Fprintf(env.Err, "warning: envelope %d skipped: %v\n", e.Seq, perr)
-			} else {
-				r.Report = rep
-				if err := db.Apply(ctx, batch, r, now); err != nil {
-					return res, err
-				}
-				for d := range batch.Days {
-					days[d] = true
-				}
-				res.Workouts += len(batch.Workouts)
-				res.Dropped += rep.DroppedDays + rep.DroppedValues + rep.DroppedWorkouts
+				fmt.Fprintf(env.Err, "warning: envelope %d could not be read (%v); kept in local quarantine and retried on the next fetch\n", e.Seq, failure)
 			}
 			res.Envelopes++
 			cursor = e.Seq
@@ -308,6 +368,11 @@ func Fetch(ctx context.Context, env Env, s *State, o FetchOptions) (res FetchRes
 		if !more || len(envelopes) == 0 {
 			break
 		}
+	}
+	if cov, err := db.Coverage(ctx); err == nil {
+		res.Quarantined = cov.Quarantined
+	} else {
+		return res, err
 	}
 	res.LastSeq, res.Days = cursor, len(days)
 	for d := range days {

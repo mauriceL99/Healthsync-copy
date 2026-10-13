@@ -165,6 +165,7 @@ Rules:
 | 413 | `body_too_large` | Body exceeds the endpoint limit |
 | 429 | `rate_limited` | Too many requests |
 | 500 | `internal_error` | Server error |
+
 `StoredEnvelope` = `Envelope` plus `{"seq": int, "received_at": timestamp}`.
 
 ## 6. Envelope
@@ -215,3 +216,11 @@ The agent fetches envelopes in ascending `seq`. It applies them in that order, s
 later upload overrides earlier values per day and per metric. Workouts are merged by
 `id`. After the data is stored, the agent acks the highest processed `seq` unless the
 user chose `--keep-on-relay`.
+
+An envelope the agent cannot open or validate (for example, one written by a newer
+app) is acked like the others, so it cannot block the mailbox. The agent keeps its
+ciphertext in a local quarantine and retries it on every fetch.
+
+If `POST /v1/accounts` reports `created: true` for an agent that already has a fetch
+position, the relay has lost the account (for example, after a database reset). Its
+sequence numbers start again at 1, so the agent resets its position to 0.

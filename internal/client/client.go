@@ -121,7 +121,7 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, in, out an
 		return nil
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return errors.New("relay returned invalid JSON")
+		return fmt.Errorf("relay returned an unexpected response: %w", err)
 	}
 	return nil
 }

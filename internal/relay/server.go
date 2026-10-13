@@ -101,12 +101,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rec.Header().Set("Cache-Control", "no-store")
 	rec.Header().Set("X-Content-Type-Options", "nosniff")
 	if !s.limiter.allow(s.clientIP(r), start) {
-		writeError(rec, fail(http.StatusTooManyRequests, "rate_limited", "too many requests, slow down"))
+		s.writeError(rec, r, fail(http.StatusTooManyRequests, "rate_limited", "too many requests, slow down"))
 	} else {
 		s.mux.ServeHTTP(rec, r)
 	}
 	// Never log bodies, keys or query strings.
-	s.cfg.Logger.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration_ms", time.Since(start).Milliseconds())
+	s.cfg.Logger.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration_ms", s.cfg.Now().Sub(start).Milliseconds())
 }
 
 // RunJanitor deletes expired envelopes and nonces until ctx is done.
@@ -143,31 +143,52 @@ type handler func(w http.ResponseWriter, r *http.Request, body []byte) (any, int
 // means the configured upload limit.
 func (s *Server) route(pattern string, mode authMode, bodyLimit int64, h handler) {
 	s.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-		limit := bodyLimit
-		if limit < 0 {
-			limit = s.cfg.MaxUploadBytes
-		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, max(limit, 1)))
+		body, err := readBody(w, r, bodyLimit, s.cfg.MaxUploadBytes)
 		if err != nil {
-			writeError(w, fail(http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds the limit"))
-			return
-		}
-		if limit == 0 && len(body) > 0 {
-			writeError(w, fail(http.StatusBadRequest, "unexpected_body", "this endpoint takes no body"))
+			s.writeError(w, r, err)
 			return
 		}
 		ctx, err := s.authenticate(r, mode, body)
 		if err != nil {
-			writeError(w, err)
+			s.writeError(w, r, err)
 			return
 		}
 		result, status, err := h(w, r.WithContext(ctx), body)
 		if err != nil {
-			writeError(w, err)
+			s.writeError(w, r, err)
 			return
 		}
 		writeJSON(w, status, result)
 	})
+}
+
+// readBody reads the request body within the endpoint's limit. A limit of 0
+// means the endpoint takes no body; -1 means the configured upload limit.
+func readBody(w http.ResponseWriter, r *http.Request, limit, uploadLimit int64) ([]byte, error) {
+	if limit < 0 {
+		limit = uploadLimit
+	}
+	if limit == 0 {
+		// One byte is enough to tell "no body" from "unexpected body".
+		probe, err := io.ReadAll(io.LimitReader(r.Body, 1))
+		if err != nil {
+			return nil, fail(http.StatusBadRequest, "unreadable_body", "the request body could not be read")
+		}
+		if len(probe) > 0 {
+			return nil, fail(http.StatusBadRequest, "unexpected_body", "this endpoint takes no body")
+		}
+		return nil, nil
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		return nil, fail(http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds the limit")
+	case err != nil:
+		// Client aborts and read timeouts are not size problems.
+		return nil, fail(http.StatusBadRequest, "unreadable_body", "the request body could not be read")
+	}
+	return body, nil
 }
 
 func (s *Server) authenticate(r *http.Request, mode authMode, body []byte) (context.Context, error) {
@@ -269,7 +290,12 @@ func (s *Server) registerAccount(_ http.ResponseWriter, r *http.Request, body []
 		return nil, 0, fail(http.StatusBadRequest, "invalid_request", "invalid JSON body")
 	}
 	if s.cfg.RegistrationToken != "" {
-		if _, err := s.store.Account(r.Context(), req.Account); errors.Is(err, ErrNotFound) &&
+		// Only new accounts need the token; a lookup failure must not skip the check.
+		_, err := s.store.Account(r.Context(), req.Account)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, 0, err
+		}
+		if errors.Is(err, ErrNotFound) &&
 			subtle.ConstantTimeCompare([]byte(r.Header.Get("HB-Registration-Token")), []byte(s.cfg.RegistrationToken)) != 1 {
 			return nil, 0, fail(http.StatusForbidden, "registration_token_required", "this relay requires a registration token for new accounts")
 		}
@@ -482,18 +508,29 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, err error) {
+// writeError renders an apiError as is. Any other error is an internal failure:
+// the client gets a generic 500 and the operator gets the cause in the log
+// (method and path only; never bodies, keys or query strings).
+func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var api *apiError
 	if !errors.As(err, &api) {
+		s.cfg.Logger.Error("internal error", "method", r.Method, "path", r.URL.Path, "error", err)
 		api = fail(http.StatusInternalServerError, "internal_error", "internal server error")
 	}
 	writeJSON(w, api.Status, map[string]any{"error": map[string]string{"code": api.Code, "message": api.Message}})
 }
 
+// clientIP returns the address used for rate limiting. Behind a trusted proxy
+// it takes the RIGHTMOST X-Forwarded-For entry: that is the one the proxy
+// itself appended (or set), while entries further left come from the client
+// and can be forged to get a fresh rate-limit bucket per request.
 func (s *Server) clientIP(r *http.Request) string {
 	if s.cfg.TrustProxy {
 		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			return strings.TrimSpace(strings.Split(fwd, ",")[0])
+			parts := strings.Split(fwd, ",")
+			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+				return ip
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

@@ -109,7 +109,11 @@ func ListWorkouts(ctx context.Context, db *DB, w Window, samples bool) (WorkoutL
 	if ws == nil {
 		ws = []healthdata.Workout{}
 	}
-	return WorkoutList{Timezone: db.Location(ctx).String(), From: w.FromString(), To: w.ToString(), Workouts: ws, Notice: Notice}, nil
+	loc, err := db.Location(ctx)
+	if err != nil {
+		return WorkoutList{}, err
+	}
+	return WorkoutList{Timezone: loc.String(), From: w.FromString(), To: w.ToString(), Workouts: ws, Notice: Notice}, nil
 }
 
 // RenderWorkouts renders workouts as a table.

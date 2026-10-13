@@ -236,25 +236,20 @@ func (s *Store) UnlinkDevice(ctx context.Context, id string, now time.Time) (boo
 }
 
 // AddEnvelope stores an envelope; a duplicate ID returns the existing seq.
+// INSERT … ON CONFLICT DO NOTHING keeps this correct when a device retries an
+// upload while the first attempt is still being processed.
 func (s *Store) AddEnvelope(ctx context.Context, e protocol.Envelope, now time.Time) (int64, error) {
 	body, err := json.Marshal(e)
 	if err != nil {
 		return 0, err
 	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO envelopes(account, id, body, size, received_at) VALUES(?,?,?,?,?)
+		ON CONFLICT(account, id) DO NOTHING`, e.Account, e.ID, string(body), len(e.Ct), now.Unix()); err != nil {
+		return 0, err
+	}
 	var seq int64
 	err = s.db.QueryRowContext(ctx, `SELECT seq FROM envelopes WHERE account = ? AND id = ?`, e.Account, e.ID).Scan(&seq)
-	if err == nil {
-		return seq, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, err
-	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO envelopes(account, id, body, size, received_at) VALUES(?,?,?,?,?)`,
-		e.Account, e.ID, string(body), len(e.Ct), now.Unix())
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
+	return seq, err
 }
 
 // Envelopes lists envelopes after seq, limited by count and total ciphertext size.

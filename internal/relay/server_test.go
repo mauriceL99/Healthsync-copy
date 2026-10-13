@@ -185,3 +185,39 @@ func TestRegistrationToken(t *testing.T) {
 		t.Fatalf("with token: %v", err)
 	}
 }
+
+func TestConcurrentDuplicateUploadsAreIdempotent(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	dev, err := f.device(t, f.secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _ := protocol.Seal([]byte(`{"schema":1}`), f.enc.PublicKey(), protocol.SealParams{Account: f.account})
+	const n = 8
+	seqs := make(chan int64, n)
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			s, err := dev.Upload(ctx, []protocol.Envelope{e})
+			if err != nil {
+				errs <- err
+				return
+			}
+			seqs <- s[0]
+		}()
+	}
+	var first int64
+	for i := 0; i < n; i++ {
+		select {
+		case err := <-errs:
+			t.Fatalf("concurrent duplicate upload failed: %v", err)
+		case s := <-seqs:
+			if first == 0 {
+				first = s
+			} else if s != first {
+				t.Fatalf("duplicate got a new seq: %d vs %d", s, first)
+			}
+		}
+	}
+}

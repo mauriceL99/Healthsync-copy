@@ -80,7 +80,8 @@ func SelfTest(ctx context.Context, env Env) error {
 		if err != nil {
 			return err
 		}
-		return db.Apply(ctx, batch, EnvelopeResult{Seq: 1, ID: env1.ID, Kind: env1.Kind, Created: env1.CreatedAt, Status: "ok"}, time.Now())
+		_, err = db.Apply(ctx, batch, EnvelopeResult{Seq: 1, ID: env1.ID, Kind: env1.Kind, Created: env1.CreatedAt, Status: "ok"}, time.Now())
+		return err
 	}); err != nil {
 		return err
 	}

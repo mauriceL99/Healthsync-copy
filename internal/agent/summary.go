@@ -152,7 +152,10 @@ func ResolveWindow(period string, days int, end, latest string, now time.Time) (
 
 // BuildReport computes the summary for window w.
 func BuildReport(ctx context.Context, db *DB, w Window, now time.Time) (Report, error) {
-	loc := db.Location(ctx)
+	loc, err := db.Location(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	prev := w.Previous()
 	days, err := db.Days(ctx, w.FromString(), w.ToString())
 	if err != nil {

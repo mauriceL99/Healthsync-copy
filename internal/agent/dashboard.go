@@ -108,9 +108,13 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 	metric("activity.active_energy_kcal", "bar", "c4")
 	metric("body.weight_kg", "line", "c3")
 
+	loc, err := db.Location(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for i := len(workouts) - 1; i >= 0; i-- {
 		wk := workouts[i]
-		row := workoutRow{Date: wk.StartTime().In(db.Location(ctx)).Format("Mon 02 Jan 15:04"), Type: strings.ReplaceAll(wk.Type, "_", " "), Duration: formatDuration(workoutMinutes(wk)), Distance: "–", HR: "–"}
+		row := workoutRow{Date: wk.StartTime().In(loc).Format("Mon 02 Jan 15:04"), Type: strings.ReplaceAll(wk.Type, "_", " "), Duration: formatDuration(workoutMinutes(wk)), Distance: "–", HR: "–"}
 		if wk.DistanceM != nil && *wk.DistanceM > 0 {
 			row.Distance = formatNumber(*wk.DistanceM/1000, 2) + " km"
 		}

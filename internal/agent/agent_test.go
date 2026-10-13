@@ -134,15 +134,87 @@ func TestFetchSkipsBadEnvelopes(t *testing.T) {
 	s, _ = OpenState(dir)
 	defer s.Close()
 	res, err := Fetch(ctx, Env{Out: io.Discard, Err: io.Discard}, s, FetchOptions{})
-	if err != nil || res.Envelopes != 3 || res.Failed != 2 || res.Days != 3 {
+	if err != nil || res.Envelopes != 3 || res.Failed != 2 || res.Days != 3 || res.Quarantined != 2 {
 		t.Fatalf("fetch: %+v %v", res, err)
+	}
+	// Unreadable envelopes stay quarantined locally and are retried on every fetch.
+	res, err = Fetch(ctx, Env{Out: io.Discard, Err: io.Discard}, s, FetchOptions{})
+	if err != nil || res.Recovered != 0 || res.Quarantined != 2 {
+		t.Fatalf("second fetch: %+v %v", res, err)
 	}
 	db, _ := OpenDB(s.DBPath())
 	defer db.Close()
-	cov, _ := db.Coverage(ctx)
-	if cov.Failed != 2 || cov.Envelopes != 3 {
-		t.Fatalf("envelope log: %+v", cov)
+	q, err := db.Quarantined(ctx)
+	if err != nil || len(q) != 2 || q[0].Attempts != 2 {
+		t.Fatalf("quarantine: %+v %v", q, err)
 	}
+}
+
+func TestQuarantinedEnvelopeIsRecovered(t *testing.T) {
+	ctx := context.Background()
+	relayURL := startRelay(t)
+	dir := t.TempDir()
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--relay", relayURL, "--no-terminal-qr"); code != 0 {
+		t.Fatal(e)
+	}
+	s, _ := OpenState(dir)
+	defer s.Close()
+	id, err := s.LoadIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc, _ := time.LoadLocation("Europe/Berlin")
+	plain, _ := json.Marshal(healthdata.Synthetic(time.Now(), 2, loc, 1))
+	e, _ := protocol.Seal(plain, id.Enc.PublicKey(), protocol.SealParams{Account: s.Config.Account})
+	db, _ := OpenDB(s.DBPath())
+	// Simulates an envelope an older CLI could not read.
+	if err := db.Quarantine(ctx, protocol.StoredEnvelope{Envelope: e, Seq: 7}, "unsupported", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	res, err := Fetch(ctx, Env{Out: io.Discard, Err: io.Discard}, s, FetchOptions{})
+	if err != nil || res.Recovered != 1 || res.Quarantined != 0 || res.Days != 2 {
+		t.Fatalf("recovery: %+v %v", res, err)
+	}
+}
+
+func TestRotateKeepsRelayAndName(t *testing.T) {
+	relayURL := startRelay(t)
+	dir := t.TempDir()
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--relay", relayURL, "--name", "Desk", "--no-terminal-qr"); code != 0 {
+		t.Fatal(e)
+	}
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--rotate", "--no-terminal-qr"); code != 0 {
+		t.Fatalf("rotate without --relay: %s", e)
+	}
+	s, _ := OpenState(dir)
+	defer s.Close()
+	if s.Config.Relay != relayURL || s.Config.Name != "Desk" || s.Config.SafetyCode == "" || !s.Config.Registered {
+		t.Fatalf("rotated config: %+v", s.Config)
+	}
+}
+
+func TestFetchPositionResetsWhenRelayForgotAccount(t *testing.T) {
+	dir := t.TempDir()
+	first := startRelay(t)
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--relay", first, "--no-terminal-qr"); code != 0 {
+		t.Fatal(e)
+	}
+	s, _ := OpenState(dir)
+	s.Config.LastSeq = 5000
+	// Same URL, empty database: emulate a relay reset by pointing at a fresh relay.
+	s.Config.Relay = startRelay(t)
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := s.LoadIdentity()
+	if err := register(context.Background(), Env{Out: io.Discard, Err: io.Discard}, s, id); err != nil {
+		t.Fatal(err)
+	}
+	if s.Config.LastSeq != 0 {
+		t.Fatalf("fetch position not reset: %d", s.Config.LastSeq)
+	}
+	s.Close()
 }
 
 func TestMCPProtocol(t *testing.T) {

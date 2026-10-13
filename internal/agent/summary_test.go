@@ -27,7 +27,7 @@ func TestTrend(t *testing.T) {
 func applyDays(t *testing.T, db *DB, days map[string]healthdata.Day) {
 	t.Helper()
 	b := healthdata.Batch{Schema: 1, GeneratedAt: "2026-10-13T08:00:00Z", Timezone: "UTC", Days: days}
-	if err := db.Apply(context.Background(), b, EnvelopeResult{Seq: 1, ID: "x", Kind: "sync", Created: b.GeneratedAt, Status: "ok"}, time.Now()); err != nil {
+	if _, err := db.Apply(context.Background(), b, EnvelopeResult{Seq: 1, ID: "x", Kind: "sync", Created: b.GeneratedAt, Status: "ok"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }

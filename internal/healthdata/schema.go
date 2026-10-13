@@ -130,7 +130,7 @@ func Parse(plaintext []byte) (Batch, Report, error) {
 	dec.UseNumber()
 	var raw map[string]any
 	if err := dec.Decode(&raw); err != nil {
-		return Batch{}, Report{}, errors.New("health batch is not a JSON object")
+		return Batch{}, Report{}, fmt.Errorf("health batch is not a JSON object: %w", err)
 	}
 	if dec.More() {
 		return Batch{}, Report{}, errors.New("trailing data after health batch")

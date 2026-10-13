@@ -242,13 +242,22 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			_, err = env.Out.Write(data)
 			return err
 		}
+		if res.Recovered > 0 {
+			fmt.Fprintf(env.Out, "Recovered %d previously unreadable envelopes from the local quarantine.\n", res.Recovered)
+		}
+		if res.RepairedDays > 0 {
+			fmt.Fprintf(env.Err, "warning: %d stored days were unreadable and were replaced with the fetched data.\n", res.RepairedDays)
+		}
 		if res.Envelopes == 0 {
 			fmt.Fprintln(env.Out, "No new data on the relay. Open HealthBridge on the iPhone and tap Sync now, or wait for the next automatic sync.")
+			if res.Quarantined > 0 {
+				fmt.Fprintf(env.Out, "%d envelopes remain in the local quarantine (see healthbridge status).\n", res.Quarantined)
+			}
 			return nil
 		}
 		fmt.Fprintf(env.Out, "Fetched %d envelopes: %d days (%s → %s) and %d workouts updated", res.Envelopes, res.Days, res.FirstDate, res.LastDate, res.Workouts)
 		if res.Failed > 0 {
-			fmt.Fprintf(env.Out, ", %d envelopes failed", res.Failed)
+			fmt.Fprintf(env.Out, ", %d unreadable envelopes kept in quarantine", res.Failed)
 		}
 		if res.Dropped > 0 {
 			fmt.Fprintf(env.Out, ", %d invalid values dropped", res.Dropped)
@@ -554,5 +563,8 @@ func printStatus(w io.Writer, st StatusReport) {
 		fmt.Fprintf(w, "  Local data:   %d days (%s → %s), %d workouts\n", st.Local.Days, st.Local.FirstDate, st.Local.LastDate, st.Local.Workouts)
 	} else {
 		fmt.Fprintln(w, "  Local data:   none yet")
+	}
+	if st.Local.Quarantined > 0 {
+		fmt.Fprintf(w, "  Quarantine:   %d unreadable envelopes kept locally, retried on every fetch (update healthbridge if this persists)\n", st.Local.Quarantined)
 	}
 }
