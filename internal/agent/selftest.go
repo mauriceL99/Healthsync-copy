@@ -33,16 +33,22 @@ func SelfTest(ctx context.Context, env Env) error {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	enc, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	enc, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
 	account := protocol.NewAccountID()
-	loc, _ := time.LoadLocation("Europe/Berlin")
-	if loc == nil {
+	// A zone with daylight saving time exercises local-day handling; systems
+	// without a time-zone database still run every other check in UTC.
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
 		loc = time.UTC
 	}
+	now := env.now()
 	var env1 protocol.Envelope
 	var plain []byte
 	if err := step("encrypt synthetic batch (X25519 + HKDF-SHA256 + ChaCha20-Poly1305)", func() error {
-		plain, err = json.Marshal(healthdata.Synthetic(time.Now(), 14, loc, 1))
+		plain, err = json.Marshal(healthdata.Synthetic(now, 14, loc, 1))
 		if err != nil {
 			return err
 		}
@@ -75,27 +81,31 @@ func SelfTest(ctx context.Context, env Env) error {
 		return err
 	}
 	var db *DB
+	defer func() {
+		if db != nil {
+			db.Close()
+		}
+	}()
 	if err := step("store in SQLite", func() error {
 		db, err = OpenDB(filepath.Join(dir, "health.db"))
 		if err != nil {
 			return err
 		}
-		_, err = db.Apply(ctx, batch, EnvelopeResult{Seq: 1, ID: env1.ID, Kind: env1.Kind, Created: env1.CreatedAt, Status: "ok"}, time.Now())
+		_, err = db.Apply(ctx, batch, EnvelopeResult{Seq: 1, ID: env1.ID, Kind: env1.Kind, Created: env1.CreatedAt, Status: "ok"}, now)
 		return err
 	}); err != nil {
 		return err
 	}
-	defer db.Close()
 	return step("summarize and render dashboard", func() error {
 		cov, err := db.Coverage(ctx)
 		if err != nil {
 			return err
 		}
-		w, err := ResolveWindow("week", 0, "", cov.LastDate, time.Now())
+		w, err := ResolveWindow("week", 0, "", cov.LastDate, now)
 		if err != nil {
 			return err
 		}
-		r, err := BuildReport(ctx, db, w, time.Now())
+		r, err := BuildReport(ctx, db, w, now)
 		if err != nil {
 			return err
 		}

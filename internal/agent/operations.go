@@ -394,6 +394,14 @@ func openEnvelope(e protocol.Envelope, account string, key *ecdh.PrivateKey) (he
 	return healthdata.Parse(plain)
 }
 
+// LastFetch summarizes the most recent fetch (empty strings when none ran yet).
+type LastFetch struct {
+	At            string `json:"at"`
+	Status        string `json:"status"`
+	Error         string `json:"error"`
+	LastSuccessAt string `json:"last_success_at"`
+}
+
 // StatusReport is printed by `healthbridge status`.
 type StatusReport struct {
 	StateDir   string         `json:"state_dir"`
@@ -401,7 +409,7 @@ type StatusReport struct {
 	AgentName  string         `json:"agent_name"`
 	SafetyCode string         `json:"safety_code"`
 	Registered bool           `json:"registered"`
-	LastFetch  map[string]any `json:"last_fetch"`
+	LastFetch  LastFetch      `json:"last_fetch"`
 	Local      Coverage       `json:"local_data"`
 	RelayState *client.Status `json:"relay_status,omitempty"`
 	RelayError string         `json:"relay_error,omitempty"`
@@ -414,7 +422,7 @@ func Status(ctx context.Context, env Env, s *State, offline bool) (StatusReport,
 	}
 	r := StatusReport{
 		StateDir: s.Dir, Relay: s.Config.Relay, AgentName: s.Config.Name, SafetyCode: s.Config.SafetyCode, Registered: s.Config.Registered,
-		LastFetch: map[string]any{"at": s.Config.LastFetchAt, "status": s.Config.LastFetchStatus, "error": s.Config.LastFetchError, "last_success_at": s.Config.LastSuccessAt},
+		LastFetch: LastFetch{At: s.Config.LastFetchAt, Status: s.Config.LastFetchStatus, Error: s.Config.LastFetchError, LastSuccessAt: s.Config.LastSuccessAt},
 	}
 	db, err := OpenDB(s.DBPath())
 	if err != nil {

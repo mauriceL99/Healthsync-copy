@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/mauriceL99/Healthsync-copy/internal/healthdata"
@@ -258,14 +259,14 @@ func (d *DB) Days(ctx context.Context, from, to string) (map[string]healthdata.D
 func (d *DB) Workouts(ctx context.Context, from, to string) ([]healthdata.Workout, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT data FROM workouts WHERE date >= ? AND date <= ? ORDER BY start`, from, to)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query workouts %s..%s: %w", from, to, err)
 	}
 	defer rows.Close()
 	var out []healthdata.Workout
 	for rows.Next() {
 		var data string
 		if err := rows.Scan(&data); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read workout row: %w", err)
 		}
 		var w healthdata.Workout
 		if err := json.Unmarshal([]byte(data), &w); err != nil {
@@ -345,12 +346,7 @@ func (d *DB) MetricPaths(ctx context.Context) (map[string]int, error) {
 
 // SortedDates returns the keys of a day map in ascending order.
 func SortedDates(days map[string]healthdata.Day) []string {
-	out := make([]string, 0, len(days))
-	for d := range days {
-		out = append(out, d)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(days))
 }
 
 func touchPrivate(path string) error {

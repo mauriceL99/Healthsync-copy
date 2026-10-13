@@ -125,7 +125,7 @@ func RenderWorkouts(l WorkoutList) string {
 		loc = time.UTC
 	}
 	for _, w := range l.Workouts {
-		line := fmt.Sprintf("  %s  %-30s %s", w.StartTime().In(loc).Format("Mon 2006-01-02 15:04"), strings.ReplaceAll(w.Type, "_", " "), formatDuration(workoutMinutes(w)))
+		line := fmt.Sprintf("  %s  %-30s %s", w.StartTime().In(loc).Format("Mon 2006-01-02 15:04"), workoutLabel(w.Type), formatDuration(workoutMinutes(w)))
 		if w.DistanceM != nil && *w.DistanceM > 0 {
 			line += fmt.Sprintf(" · %s km", formatNumber(*w.DistanceM/1000, 2))
 		}

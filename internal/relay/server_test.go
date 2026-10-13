@@ -57,7 +57,7 @@ func (f *fixture) device(t *testing.T, secret []byte) (*client.Client, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := c.LinkDevice(context.Background(), f.account, secret, pub, "iPhone", "ios", "1.0")
+	id, err := c.LinkDevice(context.Background(), client.DeviceLink{Account: f.account, Secret: secret, DeviceSig: pub, Name: "iPhone", Platform: "ios", AppVersion: "1.0"})
 	if err != nil {
 		return nil, err
 	}

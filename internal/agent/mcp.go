@@ -196,39 +196,37 @@ func (m *MCP) call(ctx context.Context, name string, raw json.RawMessage) (strin
 			return "", nil, fmt.Errorf("invalid arguments: %v", err)
 		}
 	}
-	s, err := OpenState(m.StateDir)
-	if err != nil {
-		return "", nil, err
-	}
-	defer s.Close()
-	if err := s.RequireInit(); err != nil {
-		return "", nil, err
-	}
-	if name == "health_sync" {
-		res, err := Fetch(ctx, m.Env, s, FetchOptions{})
-		if err != nil {
-			return "", nil, err
+	var text string
+	var structured any
+	err := withState(m.StateDir, func(s *State) error {
+		var err error
+		switch name {
+		case "health_sync":
+			var res FetchResult
+			if res, err = Fetch(ctx, m.Env, s, FetchOptions{}); err == nil {
+				text, structured = fmt.Sprintf("Fetched %d envelopes; %d days and %d workouts updated (%d failed).", res.Envelopes, res.Days, res.Workouts, res.Failed), res
+			}
+			return err
+		case "health_status":
+			var st StatusReport
+			if st, err = Status(ctx, m.Env, s, !a.CheckRelay); err != nil {
+				return err
+			}
+			st.SafetyCode = "" // not needed by agents
+			data, err := json.MarshalIndent(st, "", "  ")
+			text, structured = string(data), st
+			return err
 		}
-		return fmt.Sprintf("Fetched %d envelopes; %d days and %d workouts updated (%d failed).", res.Envelopes, res.Days, res.Workouts, res.Failed), res, nil
-	}
-	if name == "health_status" {
-		st, err := Status(ctx, m.Env, s, !a.CheckRelay)
-		if err != nil {
-			return "", nil, err
-		}
-		st.SafetyCode = "" // not needed by agents
-		data, _ := json.MarshalIndent(st, "", "  ")
-		return string(data), st, nil
-	}
-	db, err := OpenDB(s.DBPath())
-	if err != nil {
-		return "", nil, err
-	}
-	defer db.Close()
-	cov, err := db.Coverage(ctx)
-	if err != nil {
-		return "", nil, err
-	}
+		return withCoverage(ctx, s, func(db *DB, cov Coverage) error {
+			text, structured, err = m.query(ctx, name, a, db, cov)
+			return err
+		})
+	})
+	return text, structured, err
+}
+
+// query answers the tools that read the local database.
+func (m *MCP) query(ctx context.Context, name string, a toolArgs, db *DB, cov Coverage) (string, any, error) {
 	switch name {
 	case "health_summary":
 		w, err := ResolveWindow(a.Period, a.Days, a.End, cov.LastDate, m.Env.now())
@@ -273,7 +271,7 @@ func (m *MCP) call(ctx context.Context, name string, raw json.RawMessage) (strin
 		var b strings.Builder
 		fmt.Fprintf(&b, "Stored days: %d (%s → %s), workouts: %d\n", cov.Days, cov.FirstDate, cov.LastDate, cov.Workouts)
 		for _, metric := range healthdata.Catalog {
-			rows = append(rows, map[string]any{"metric": metric.Path(), "label": metric.Label, "unit": metric.Unit, "aggregation": metric.Agg, "days_with_data": counts[metric.Path()]})
+			rows = append(rows, map[string]any{"metric": metric.Path(), "label": metric.Label, "unit": metric.Unit, "aggregation": metric.Agg, "healthkit": metric.HealthKit, "days_with_data": counts[metric.Path()]})
 			if counts[metric.Path()] > 0 {
 				fmt.Fprintf(&b, "- %s (%s, %s): %d days\n", metric.Path(), metric.Label, metric.Unit, counts[metric.Path()])
 			}

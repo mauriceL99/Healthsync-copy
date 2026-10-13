@@ -117,7 +117,7 @@ func TestFetchSkipsBadEnvelopes(t *testing.T) {
 	agentKey, _ := ecdh.X25519().NewPublicKey(encPub)
 	devPub, devPriv, _ := ed25519.GenerateKey(rand.Reader)
 	c, _ := client.New(relayURL, protocol.KeyNewDevice, devPriv, 5*time.Second)
-	id, err := c.LinkDevice(ctx, p.Account, secret, devPub, "test", "ios", "1")
+	id, err := c.LinkDevice(ctx, client.DeviceLink{Account: p.Account, Secret: secret, DeviceSig: devPub, Name: "test", Platform: "ios", AppVersion: "1"})
 	if err != nil {
 		t.Fatal(err)
 	}

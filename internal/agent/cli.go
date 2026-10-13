@@ -153,7 +153,8 @@ func addWindow(fs *flag.FlagSet, w *windowFlags, defPeriod string, defDays int) 
 	fs.StringVar(&w.end, "end", "", "last day of the window, YYYY-MM-DD (default: latest synced day)")
 }
 
-func withDB(ctx context.Context, stateDir string, fn func(*State, *DB, Coverage) error) error {
+// withState opens an initialized state directory for the duration of fn.
+func withState(stateDir string, fn func(*State) error) error {
 	s, err := OpenState(stateDir)
 	if err != nil {
 		return err
@@ -162,6 +163,11 @@ func withDB(ctx context.Context, stateDir string, fn func(*State, *DB, Coverage)
 	if err := s.RequireInit(); err != nil {
 		return err
 	}
+	return fn(s)
+}
+
+// withCoverage opens the local database of s for the duration of fn.
+func withCoverage(ctx context.Context, s *State, fn func(*DB, Coverage) error) error {
 	db, err := OpenDB(s.DBPath())
 	if err != nil {
 		return err
@@ -171,7 +177,13 @@ func withDB(ctx context.Context, stateDir string, fn func(*State, *DB, Coverage)
 	if err != nil {
 		return err
 	}
-	return fn(s, db, cov)
+	return fn(db, cov)
+}
+
+func withDB(ctx context.Context, stateDir string, fn func(*State, *DB, Coverage) error) error {
+	return withState(stateDir, func(s *State) error {
+		return withCoverage(ctx, s, func(db *DB, cov Coverage) error { return fn(s, db, cov) })
+	})
 }
 
 func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir string) error {
@@ -551,11 +563,10 @@ func printStatus(w io.Writer, st StatusReport) {
 		}
 		fmt.Fprintf(w, "  Pending:      %d encrypted uploads waiting on the relay\n", st.RelayState.PendingEnvelopes)
 	}
-	lf := st.LastFetch
-	if lf["at"] != "" {
-		fmt.Fprintf(w, "  Last fetch:   %v (%v)", lf["at"], lf["status"])
-		if e, _ := lf["error"].(string); e != "" {
-			fmt.Fprintf(w, ": %s", e)
+	if lf := st.LastFetch; lf.At != "" {
+		fmt.Fprintf(w, "  Last fetch:   %s (%s)", lf.At, lf.Status)
+		if lf.Error != "" {
+			fmt.Fprintf(w, ": %s", lf.Error)
 		}
 		fmt.Fprintln(w)
 	}

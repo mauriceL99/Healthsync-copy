@@ -96,6 +96,9 @@ type Workout struct {
 // StartTime parses Start; sanitized workouts always have a valid start.
 func (w Workout) StartTime() time.Time { t, _ := time.Parse(time.RFC3339Nano, w.Start); return t }
 
+// EndTime parses End; sanitized workouts always have a valid end.
+func (w Workout) EndTime() time.Time { t, _ := time.Parse(time.RFC3339Nano, w.End); return t }
+
 // Batch is a sanitized HealthBatch.
 type Batch struct {
 	Schema      int               `json:"schema"`
@@ -213,36 +216,40 @@ func sanitizeDay(groups map[string]any, rep *Report) Day {
 		}
 		out := map[string]any{}
 		for _, key := range sortedKeys(values) {
-			value := values[key]
-			if group == "sleep" {
-				switch key {
-				case "bedtime", "wake_time":
-					if s, ok := value.(string); ok && validTimestamp(s) {
-						out[key] = s
-					} else {
-						rep.DroppedValues++
-					}
-					continue
-				case "sessions":
-					if sessions := sanitizeSessions(value, rep); len(sessions) > 0 {
-						out[key] = sessions
-					}
-					continue
-				}
+			if v, ok := sanitizeValue(group, key, values[key], rep); ok {
+				out[key] = v
 			}
-			metric, known := Lookup(group + "." + key)
-			n, isNum := num(value)
-			if !known || !isNum || n < metric.Min || n > metric.Max {
-				rep.DroppedValues++
-				continue
-			}
-			out[key] = round(n, 3)
 		}
 		if len(out) > 0 {
 			day[group] = out
 		}
 	}
 	return day
+}
+
+// sanitizeValue returns the cleaned value of group.key, or false when the key
+// is unknown or the value invalid (counted in rep, except empty session lists).
+func sanitizeValue(group, key string, value any, rep *Report) (any, bool) {
+	if group == "sleep" {
+		switch key {
+		case "bedtime", "wake_time":
+			if s, ok := value.(string); ok && validTimestamp(s) {
+				return s, true
+			}
+			rep.DroppedValues++
+			return nil, false
+		case "sessions":
+			sessions := sanitizeSessions(value, rep)
+			return sessions, len(sessions) > 0
+		}
+	}
+	metric, known := Lookup(group + "." + key)
+	n, isNum := num(value)
+	if !known || !isNum || n < metric.Min || n > metric.Max {
+		rep.DroppedValues++
+		return nil, false
+	}
+	return Round(n, 3), true
 }
 
 func sanitizeSessions(value any, rep *Report) []SleepSession {
@@ -319,7 +326,7 @@ func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 				rep.DroppedValues++
 				continue
 			}
-			hr.Zones = append(hr.Zones, HRZone{int(zone), round(lo, 1), round(hi, 1), round(secs, 1)})
+			hr.Zones = append(hr.Zones, HRZone{int(zone), Round(lo, 1), Round(hi, 1), Round(secs, 1)})
 		}
 	}
 	if samples, ok := m["samples"].([]any); ok {
@@ -331,7 +338,7 @@ func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 				rep.DroppedValues++
 				continue
 			}
-			hr.Samples = append(hr.Samples, HRSample{round(t, 1), round(bpm, 1)})
+			hr.Samples = append(hr.Samples, HRSample{Round(t, 1), Round(bpm, 1)})
 		}
 		sort.SliceStable(hr.Samples, func(i, j int) bool { return hr.Samples[i].T < hr.Samples[j].T })
 	}
@@ -351,7 +358,7 @@ func bounded(m map[string]any, key string, lo, hi float64, rep *Report) *float64
 		rep.DroppedValues++
 		return nil
 	}
-	n = round(n, 3)
+	n = Round(n, 3)
 	return &n
 }
 
@@ -374,7 +381,8 @@ func num(v any) (float64, bool) {
 	return f, !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
-func round(v float64, places int) float64 {
+// Round rounds v to the given number of decimal places.
+func Round(v float64, places int) float64 {
 	p := math.Pow(10, float64(places))
 	return math.Round(v*p) / p
 }
@@ -433,13 +441,16 @@ func MergeDay(old, newer Day) Day {
 	return out
 }
 
-// Number returns the numeric value at group.key, if present.
-func (d Day) Number(path Metric) (float64, bool) {
-	values := d[path.Group]
+// Number returns the value of metric m on this day, if present.
+func (d Day) Number(m Metric) (float64, bool) { return d.Value(m.Group, m.Key) }
+
+// Value returns the finite number at group.key, if present.
+func (d Day) Value(group, key string) (float64, bool) {
+	values := d[group]
 	if values == nil {
 		return 0, false
 	}
-	return num(values[path.Key])
+	return num(values[key])
 }
 
 // String renders a short description for debugging.

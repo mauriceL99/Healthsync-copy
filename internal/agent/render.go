@@ -74,7 +74,7 @@ func RenderText(r Report) string {
 	w := r.Workouts
 	fmt.Fprintf(&b, "\nWorkouts\n  %d workouts · %s · %s kcal · %s km\n", w.Count, formatDuration(w.Minutes), formatNumber(w.EnergyKcal, 0), formatNumber(w.DistanceKm, 1))
 	for _, t := range w.ByType {
-		line := fmt.Sprintf("  - %-30s ×%d · %s", strings.ReplaceAll(t.Type, "_", " "), t.Count, formatDuration(t.Minutes))
+		line := fmt.Sprintf("  - %-30s ×%d · %s", workoutLabel(t.Type), t.Count, formatDuration(t.Minutes))
 		if t.DistanceKm > 0 {
 			line += fmt.Sprintf(" · %s km", formatNumber(t.DistanceKm, 1))
 		}
@@ -126,7 +126,7 @@ func RenderMarkdown(r Report) string {
 			if t.DistanceKm > 0 {
 				dist = formatNumber(t.DistanceKm, 1) + " km"
 			}
-			fmt.Fprintf(&b, "| %s | %d | %s | %s | %s |\n", strings.ReplaceAll(t.Type, "_", " "), t.Count, formatDuration(t.Minutes), dist, hr)
+			fmt.Fprintf(&b, "| %s | %d | %s | %s | %s |\n", workoutLabel(t.Type), t.Count, formatDuration(t.Minutes), dist, hr)
 		}
 	}
 	fmt.Fprintf(&b, "\n> %s\n", r.Notice)
@@ -144,3 +144,6 @@ func groupRows(r Report, group string) []MetricStat {
 	}
 	return rows
 }
+
+// workoutLabel turns a schema workout type (snake_case) into display text.
+func workoutLabel(workoutType string) string { return strings.ReplaceAll(workoutType, "_", " ") }

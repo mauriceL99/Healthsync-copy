@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/mauriceL99/Healthsync-copy/internal/healthdata"
 )
@@ -34,7 +35,8 @@ type workoutRow struct {
 	Zones                              template.HTML
 }
 
-// Dashboard renders a self-contained HTML dashboard (no external resources).
+// Dashboard loads the window from db and renders a self-contained HTML
+// dashboard (no external resources).
 func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) {
 	days, err := db.Days(ctx, w.FromString(), w.ToString())
 	if err != nil {
@@ -44,6 +46,15 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+	loc, err := db.Location(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return renderDashboard(w, r, days, workouts, loc)
+}
+
+// renderDashboard turns loaded data into HTML; it does no I/O.
+func renderDashboard(w Window, r Report, days map[string]healthdata.Day, workouts []healthdata.Workout, loc *time.Location) ([]byte, error) {
 	dates := make([]string, 0, w.Days())
 	for d := w.From; !d.After(w.To); d = d.AddDate(0, 0, 1) {
 		dates = append(dates, d.Format("2006-01-02"))
@@ -52,7 +63,7 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 		out := make([]float64, len(dates))
 		for i, date := range dates {
 			out[i] = math.NaN()
-			if v, ok := days[date].Number(healthdata.Metric{Group: group, Key: key}); ok {
+			if v, ok := days[date].Value(group, key); ok {
 				out[i] = v
 			}
 		}
@@ -108,13 +119,9 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 	metric("activity.active_energy_kcal", "bar", "c4")
 	metric("body.weight_kg", "line", "c3")
 
-	loc, err := db.Location(ctx)
-	if err != nil {
-		return nil, err
-	}
 	for i := len(workouts) - 1; i >= 0; i-- {
 		wk := workouts[i]
-		row := workoutRow{Date: wk.StartTime().In(loc).Format("Mon 02 Jan 15:04"), Type: strings.ReplaceAll(wk.Type, "_", " "), Duration: formatDuration(workoutMinutes(wk)), Distance: "–", HR: "–"}
+		row := workoutRow{Date: wk.StartTime().In(loc).Format("Mon 02 Jan 15:04"), Type: workoutLabel(wk.Type), Duration: formatDuration(workoutMinutes(wk)), Distance: "–", HR: "–"}
 		if wk.DistanceM != nil && *wk.DistanceM > 0 {
 			row.Distance = formatNumber(*wk.DistanceM/1000, 2) + " km"
 		}

@@ -204,9 +204,9 @@ func metricStat(m healthdata.Metric, days, prevDays map[string]healthdata.Day) (
 	if s.DaysWithData == 0 {
 		return s, false
 	}
-	s.Average = round(sum/float64(s.DaysWithData), 2)
+	s.Average = healthdata.Round(sum/float64(s.DaysWithData), 2)
 	if m.Cumulative() {
-		total := round(sum, 2)
+		total := healthdata.Round(sum, 2)
 		s.Total = &total
 	}
 	prevSum, prevN := 0.0, 0
@@ -217,12 +217,12 @@ func metricStat(m healthdata.Metric, days, prevDays map[string]healthdata.Day) (
 		}
 	}
 	if prevN > 0 {
-		pa := round(prevSum/float64(prevN), 2)
-		change := round(s.Average-pa, 2)
+		pa := healthdata.Round(prevSum/float64(prevN), 2)
+		change := healthdata.Round(s.Average-pa, 2)
 		s.PreviousAverage, s.Change = &pa, &change
 		s.Trend = trend(change, pa)
 		if pa != 0 {
-			pct := round(change/math.Abs(pa)*100, 1)
+			pct := healthdata.Round(change/math.Abs(pa)*100, 1)
 			s.ChangePct = &pct
 		}
 	}
@@ -266,9 +266,9 @@ type meanAcc struct {
 	n   int
 }
 
-func (m *meanAcc) add(v any) {
-	if f, ok := num(v); ok {
-		m.sum += f
+func (m *meanAcc) add(v float64, ok bool) {
+	if ok {
+		m.sum += v
 		m.n++
 	}
 }
@@ -277,7 +277,7 @@ func (m meanAcc) mean() *float64 {
 	if m.n == 0 {
 		return nil
 	}
-	v := round(m.sum/float64(m.n), 1)
+	v := healthdata.Round(m.sum/float64(m.n), 1)
 	return &v
 }
 
@@ -287,11 +287,12 @@ func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 	var inBed, deep, rem, core, awake meanAcc
 	var bedMinutes, wakeMinutes []float64
 	for _, date := range SortedDates(days) {
-		sleep := days[date]["sleep"]
+		day := days[date]
+		sleep := day["sleep"]
 		if sleep == nil {
 			continue
 		}
-		a, ok := num(sleep["asleep_min"])
+		a, ok := day.Value("sleep", "asleep_min")
 		if !ok {
 			continue
 		}
@@ -300,11 +301,11 @@ func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 		if a < nightsUnderMin {
 			st.NightsUnder7h++
 		}
-		inBed.add(sleep["in_bed_min"])
-		deep.add(sleep["deep_min"])
-		rem.add(sleep["rem_min"])
-		core.add(sleep["core_min"])
-		awake.add(sleep["awake_min"])
+		inBed.add(day.Value("sleep", "in_bed_min"))
+		deep.add(day.Value("sleep", "deep_min"))
+		rem.add(day.Value("sleep", "rem_min"))
+		core.add(day.Value("sleep", "core_min"))
+		awake.add(day.Value("sleep", "awake_min"))
 		if t, ok := sleepTime(sleep["bedtime"], loc); ok {
 			bedMinutes = append(bedMinutes, t)
 		}
@@ -315,7 +316,7 @@ func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 	if st.Nights == 0 {
 		return nil
 	}
-	st.AvgAsleepMin = round(asleep/float64(st.Nights), 1)
+	st.AvgAsleepMin = healthdata.Round(asleep/float64(st.Nights), 1)
 	st.AvgInBedMin, st.AvgDeepMin, st.AvgREMMin, st.AvgCoreMin, st.AvgAwakeMin = inBed.mean(), deep.mean(), rem.mean(), core.mean(), awake.mean()
 	st.AvgBedtime, st.AvgWakeTime = clockMean(bedMinutes), clockMean(wakeMinutes)
 	return &st
@@ -393,9 +394,9 @@ func workoutStat(ws, prev []healthdata.Workout) WorkoutStat {
 		st.PreviousMinutes += workoutMinutes(w)
 	}
 	for typ, t := range byType {
-		t.Minutes, t.DistanceKm, t.EnergyKcal = round(t.Minutes, 1), round(t.DistanceKm, 2), round(t.EnergyKcal, 1)
+		t.Minutes, t.DistanceKm, t.EnergyKcal = healthdata.Round(t.Minutes, 1), healthdata.Round(t.DistanceKm, 2), healthdata.Round(t.EnergyKcal, 1)
 		if acc := hrWeighted[typ]; acc[1] > 0 {
-			avg := round(acc[0]/acc[1], 1)
+			avg := healthdata.Round(acc[0]/acc[1], 1)
 			t.AvgHR = &avg
 		}
 		st.ByType = append(st.ByType, *t)
@@ -406,10 +407,10 @@ func workoutStat(ws, prev []healthdata.Workout) WorkoutStat {
 		}
 		return st.ByType[i].Type < st.ByType[j].Type
 	})
-	st.Minutes, st.EnergyKcal, st.DistanceKm, st.PreviousMinutes = round(st.Minutes, 1), round(st.EnergyKcal, 1), round(st.DistanceKm, 2), round(st.PreviousMinutes, 1)
+	st.Minutes, st.EnergyKcal, st.DistanceKm, st.PreviousMinutes = healthdata.Round(st.Minutes, 1), healthdata.Round(st.EnergyKcal, 1), healthdata.Round(st.DistanceKm, 2), healthdata.Round(st.PreviousMinutes, 1)
 	if hasZones {
 		for i := range zones {
-			zones[i] = round(zones[i], 1)
+			zones[i] = healthdata.Round(zones[i], 1)
 		}
 		st.ZoneMinutes = zones
 	}
@@ -420,9 +421,7 @@ func workoutMinutes(w healthdata.Workout) float64 {
 	if w.DurationS != nil {
 		return *w.DurationS / 60
 	}
-	start, _ := time.Parse(time.RFC3339Nano, w.Start)
-	end, _ := time.Parse(time.RFC3339Nano, w.End)
-	return end.Sub(start).Minutes()
+	return w.EndTime().Sub(w.StartTime()).Minutes()
 }
 
 func highlights(r Report, days map[string]healthdata.Day) []string {
@@ -472,7 +471,7 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 			if i == 4 {
 				break
 			}
-			types = append(types, fmt.Sprintf("%s ×%d", strings.ReplaceAll(t.Type, "_", " "), t.Count))
+			types = append(types, fmt.Sprintf("%s ×%d", workoutLabel(t.Type), t.Count))
 		}
 		line := fmt.Sprintf("%d workouts, %s in total (%s)", r.Workouts.Count, formatDuration(r.Workouts.Minutes), strings.Join(types, ", "))
 		if r.Workouts.PreviousCount > 0 {
@@ -484,12 +483,8 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 	}
 	goalDays, measured := 0, 0
 	for _, day := range days {
-		a := day["activity"]
-		if a == nil {
-			continue
-		}
-		energy, ok1 := num(a["active_energy_kcal"])
-		goal, ok2 := num(a["move_goal_kcal"])
+		energy, ok1 := day.Value("activity", "active_energy_kcal")
+		goal, ok2 := day.Value("activity", "move_goal_kcal")
 		if ok1 && ok2 && goal > 0 {
 			measured++
 			if energy >= goal {
@@ -503,7 +498,7 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 	if s := stat("body.weight_kg"); s != nil && s.DaysWithData > 1 {
 		first := 0.0
 		for _, date := range SortedDates(days) {
-			if v, ok := days[date].Number(healthdata.Metric{Group: "body", Key: "weight_kg"}); ok {
+			if v, ok := days[date].Value("body", "weight_kg"); ok {
 				first = v
 				break
 			}
@@ -514,16 +509,6 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 		out = append(out, "No synced data in this period. Run `healthbridge fetch` after syncing the iPhone app.")
 	}
 	return out
-}
-
-func num(v any) (float64, bool) {
-	f, ok := v.(float64)
-	return f, ok && !math.IsNaN(f) && !math.IsInf(f, 0)
-}
-
-func round(v float64, places int) float64 {
-	p := math.Pow(10, float64(places))
-	return math.Round(v*p) / p
 }
 
 func signed(v float64, places int) string {
