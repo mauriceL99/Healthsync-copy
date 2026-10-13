@@ -249,7 +249,6 @@ enum MetricValue {
 }
 
 enum MetricCatalog {
-    // swiftlint:disable function_body_length
     static let all: [MetricDefinition] = [
         // MARK: activity
         quantity("steps", .activity, .stepCount, .count, .sum, 0...200_000, 0, "Steps", "figure.walk"),
@@ -347,7 +346,6 @@ enum MetricCatalog {
             displayName: "Mindful Minutes", symbol: "brain.head.profile"
         ),
     ]
-    // swiftlint:enable function_body_length
 
     static func metrics(in category: MetricCategory) -> [MetricDefinition] {
         all.filter { $0.category == category }
