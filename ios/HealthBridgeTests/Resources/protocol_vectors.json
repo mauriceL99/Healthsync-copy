@@ -1,0 +1,72 @@
+{
+  "notice": "PUBLIC SYNTHETIC TEST KEYS ONLY. Never use these identities with a real relay.",
+  "agent": {
+    "account": "hb_oKGio6SlpqeoqaqrrK2urw",
+    "name": "Test Agent",
+    "relay": "https://relay.example.com",
+    "sig_seed_b64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+    "sig_pub_b64": "ebVWLo/mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ=",
+    "enc_priv_b64": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "enc_pub_b64": "eaYx7t4b+cmPEgMs3q3Q56B5OY/HhriMyEbsia+FpRo=",
+    "secret_b64u": "wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8",
+    "kid": "Z8ov_W_p76s9duN8",
+    "safety_code": "F696-2D81-0521",
+    "pairing_hash": "7AceCgE2yDfAUc7mp3E+266mk2cS0aPKN+hP7jIm5h0=",
+    "pairing_code": "HB1:eyJ2IjoxLCJyZWxheSI6Imh0dHBzOi8vcmVsYXkuZXhhbXBsZS5jb20iLCJhY2NvdW50IjoiaGJfb0tHaW82U2xwcWVvcWFxcnJLMnVydyIsInNpZyI6ImViVldMby9tVlBsQWVMRVM2S21McDVBZmhUcm1sYjdYNE9PUkM2MEVsbVE9IiwiZW5jIjoiZWFZeDd0NGIrY21QRWdNczNxM1E1NkI1T1kvSGhyaU15RWJzaWErRnBSbz0iLCJzZWNyZXQiOiJ3TUhDdzhURnhzZkl5Y3JMek0zT3o5RFIwdFBVMWRiWDJObmEyOXpkM3Q4IiwibmFtZSI6IlRlc3QgQWdlbnQifQ"
+  },
+  "device": {
+    "sig_seed_b64": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8=",
+    "sig_pub_b64": "zRSzf5VulTGU/3+3Oz2B3MVh1hp1OAlLfD4aZD7l86o="
+  },
+  "request": {
+    "method": "POST",
+    "path": "/v1/envelopes",
+    "key": "device:dev_EBESExQVFhcYGRobHB0eHw",
+    "timestamp": "1760000000",
+    "nonce": "ICEiIyQlJicoKSorLC0uLw",
+    "body": "{\"envelopes\":[]}",
+    "body_sha256": "00e117c0b667aec6c72af889a903c201cc31fb23c947b7c9509aee634eff89c9",
+    "string_to_sign": "HB1-REQUEST\nPOST\n/v1/envelopes\ndevice:dev_EBESExQVFhcYGRobHB0eHw\n1760000000\nICEiIyQlJicoKSorLC0uLw\n00e117c0b667aec6c72af889a903c201cc31fb23c947b7c9509aee634eff89c9",
+    "signature_b64": "Vr9ttub5D4nourG9bxy+qJY70llLdhjQP8Lo5nW6xSgARZOWohCHeAEVgnWpXPUaG0NUplyPQ41rAUaJTZGFCw=="
+  },
+  "envelopes": [
+    {
+      "plaintext": "{\"schema\":1,\"generated_at\":\"2026-10-13T08:00:00Z\",\"timezone\":\"Europe/Berlin\",\"days\":{\"2026-10-12\":{\"activity\":{\"steps\":9214},\"heart\":{\"resting_bpm\":54}}},\"workouts\":[]}",
+      "ephemeral_priv_b64": "UFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm8=",
+      "shared_secret_b64": "hm9Z9qNqY3pHJwlz446+d/G2PkN7W4aRggMSqTZ5qiY=",
+      "key_b64": "a1lsC7JXlVbeEEX8ZFj3TNtjkhloFBsYbaUtiVgImv8=",
+      "aad": "HB1-ENVELOPE\nhb_oKGio6SlpqeoqaqrrK2urw\n6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f30\nsync\nnone\n2026-10-13T08:00:00Z",
+      "envelope": {
+        "id": "6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f30",
+        "account": "hb_oKGio6SlpqeoqaqrrK2urw",
+        "kind": "sync",
+        "alg": "HB1-X25519-HKDF-SHA256-CHACHA20POLY1305",
+        "kid": "Z8ov_W_p76s9duN8",
+        "epk": "OS0XSjizsb6vrx/oJIcIQcX6UxvG6v22QCwSRmRIjBw=",
+        "nonce": "YGFiY2RlZmdoaWpr",
+        "compression": "none",
+        "created_at": "2026-10-13T08:00:00Z",
+        "ct": "0mNgYOh1iFawDbTJjVdpun/YE8Zqxbb9O1futNs80wo4Df5gTCPsdtbcZ9o/nGJjAMUm1KgfO9ParABMJt6GXZpFRchYz5YrGfdQLF5bKgxCCF4w6dZ8ssfQjMHSGeQlYRilMnN9X4P/y9R6zUXL/61vV3gFav1FNf+qyX7FWxgH1AREebcPPZBbGx8pPFqMLTIxFHJUil1H8bK9nZ0DApyMjfNn0kUEaDVYXt6GFsXwnWfsZCd+jQ=="
+      }
+    },
+    {
+      "plaintext": "{\"schema\":1,\"generated_at\":\"2026-10-13T08:00:00Z\",\"timezone\":\"Europe/Berlin\",\"days\":{\"2026-10-12\":{\"activity\":{\"steps\":9214},\"heart\":{\"resting_bpm\":54}}},\"workouts\":[]}",
+      "ephemeral_priv_b64": "UVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3A=",
+      "shared_secret_b64": "Yvgmsu4Ys2MyR2DXnNN3XF19h91f/jzrwWXadW6G6wc=",
+      "key_b64": "vORBn4ADnhyzuiEiASIjGpfEbgb8tYsUzSZxGulanmA=",
+      "aad": "HB1-ENVELOPE\nhb_oKGio6SlpqeoqaqrrK2urw\n6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f31\nsync\ndeflate\n2026-10-13T08:00:00Z",
+      "envelope": {
+        "id": "6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f31",
+        "account": "hb_oKGio6SlpqeoqaqrrK2urw",
+        "kind": "sync",
+        "alg": "HB1-X25519-HKDF-SHA256-CHACHA20POLY1305",
+        "kid": "Z8ov_W_p76s9duN8",
+        "epk": "AjPwBu9L7RROoKW7RscGfHwqzsX4zIEfPfWf3NWsdhQ=",
+        "nonce": "YWJjZGVmZ2hpamts",
+        "compression": "deflate",
+        "created_at": "2026-10-13T08:00:00Z",
+        "ct": "CcMvezhWKr+51cEyURlu/aOar4cVlKStDKyp0r2Hzqg4DtvXnovuaElUAC7lThBzbU5w4afWCSf/Nj0/Kdut7w+o16aBIoflxy38XtyJD1nu2y2fOFRLrJTIw96GuQnJkdkH4OXlW6CMp7JVJ32KGcWdcSAv9QeoQ9jsSMIV3IDkn24RJzxcKqLJRRK/zAtcXxIb5vgqzo1ybKOg5t0waw=="
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "healthbridge",
+  "owner": { "name": "HealthBridge contributors" },
+  "plugins": [
+    {
+      "name": "healthbridge",
+      "source": "./integrations/claude-code/healthbridge",
+      "description": "Apple Health data for Claude Code via the HealthBridge MCP server, skill and /health command.",
+      "version": "0.1.0"
+    }
+  ]
+}

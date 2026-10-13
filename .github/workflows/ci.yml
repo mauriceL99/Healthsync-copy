@@ -1,0 +1,47 @@
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  go:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l cmd internal)"
+      - run: go vet ./...
+      - run: go test -race ./...
+        if: runner.os != 'Windows'
+      - run: go test ./...
+        if: runner.os == 'Windows'
+      - run: go run ./cmd/healthbridge self-test
+  vectors-in-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: iOS test vectors match the Go vectors
+        run: cmp testdata/protocol_vectors.json ios/HealthBridgeTests/Resources/protocol_vectors.json
+  ios:
+    # Builds the app and runs the protocol-vector unit tests in the simulator.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: brew install xcodegen && cd ios && xcodegen generate
+      - name: Test
+        run: |
+          cd ios
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+( Pro)?' || echo "iPhone 16")
+          xcodebuild test -project HealthBridge.xcodeproj -scheme HealthBridge \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            CODE_SIGNING_ALLOWED=NO | tail -n 80
+          exit ${PIPESTATUS[0]}

@@ -1,0 +1,7 @@
+{$HB_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 26MB
+	}
+	reverse_proxy relay:8787
+}

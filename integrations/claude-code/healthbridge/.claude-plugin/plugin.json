@@ -1,0 +1,9 @@
+{
+  "name": "healthbridge",
+  "version": "0.1.0",
+  "description": "Apple Health data for Claude Code: end-to-end encrypted sync from the HealthBridge iPhone app, summaries, trends, workouts and dashboards via MCP.",
+  "author": { "name": "HealthBridge contributors" },
+  "homepage": "https://github.com/mauriceL99/Healthsync-copy",
+  "repository": "https://github.com/mauriceL99/Healthsync-copy",
+  "keywords": ["apple-health", "healthkit", "mcp", "health", "fitness", "sleep", "workouts"]
+}

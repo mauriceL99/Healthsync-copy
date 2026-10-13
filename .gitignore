@@ -1,0 +1,13 @@
+/bin/
+/dist/
+*.db
+*.db-wal
+*.db-shm
+.healthbridge/
+pairing-qr.png
+dashboard.html
+# Xcode
+ios/*.xcodeproj/
+ios/**/xcuserdata/
+ios/DerivedData/
+.DS_Store
