@@ -1,0 +1,3 @@
+# Keep LF everywhere: test vectors are compared byte-for-byte on all platforms.
+* text=auto eol=lf
+*.png binary
