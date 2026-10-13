@@ -82,6 +82,11 @@ private struct StatusCard: View {
                     .font(.footnote)
                     .foregroundStyle(.orange)
             }
+            if let problem = model.syncState.backgroundDeliveryProblem, model.effectiveMode == .onNewData {
+                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 

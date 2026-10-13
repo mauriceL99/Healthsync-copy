@@ -67,7 +67,7 @@ final class PurchaseManager: ObservableObject {
             let loaded = try await Product.products(for: Self.productIDs)
             products = loaded.sorted { $0.price < $1.price }
         } catch {
-            lastError = "Could not load products from the App Store."
+            lastError = "Could not load products from the App Store: \(error.localizedDescription)"
         }
     }
 
@@ -93,7 +93,7 @@ final class PurchaseManager: ObservableObject {
                 return false
             }
         } catch {
-            lastError = (error as? LocalizedError)?.errorDescription ?? "The purchase failed."
+            lastError = "The purchase failed: \(error.localizedDescription)"
             return false
         }
     }
@@ -102,7 +102,7 @@ final class PurchaseManager: ObservableObject {
         do {
             try await AppStore.sync()
         } catch {
-            lastError = "Restoring purchases failed. Check that you are signed in to the App Store."
+            lastError = "Restoring purchases failed (\(error.localizedDescription)). Check that you are signed in to the App Store."
         }
         await refreshEntitlements()
     }

@@ -211,7 +211,9 @@ nach dem Koppeln nicht gespeichert. Nach einer Neuinstallation wird der alte
 Pairing-Datensatz verworfen, der Geräteschlüssel bleibt erhalten – erneutes Koppeln mit
 demselben QR-Code ist dadurch auf dem Relay idempotent. „Entkoppeln“ ruft
 `DELETE /v1/devices/self` auf und löscht alle Keychain-Einträge. Meldet das Relay
-`410 device_unlinked`, kehrt die App in den ungekoppelten Zustand zurück.
+`410 device_unlinked`, kehrt die App in den ungekoppelten Zustand zurück. `401
+unknown_device` (z. B. nach einem Relay-Reset) entkoppelt dagegen nicht still: Der Sync
+schlägt mit einem Hinweis fehl, und der Nutzer entscheidet, ob er neu koppelt.
 
 ## Hinweise für das App-Review
 

@@ -86,6 +86,7 @@ enum RelayError: LocalizedError, Equatable {
     case redirectRejected
     case invalidResponse
     case deviceUnlinked
+    case deviceUnknown
     case deviceAlreadyLinked
     case pairingRejected(String?)
     case clockSkew
@@ -111,6 +112,8 @@ enum RelayError: LocalizedError, Equatable {
             return "The relay sent an unexpected response."
         case .deviceUnlinked:
             return "This iPhone was unlinked by your agent. Pair again to continue syncing."
+        case .deviceUnknown:
+            return "The relay does not know this iPhone (for example because the relay was reset). Unpair in Settings and pair again with a new code from your agent."
         case .deviceAlreadyLinked:
             return "Another iPhone is already linked to this agent. Unlink it on the agent first, then try again."
         case .pairingRejected(let message):
@@ -334,12 +337,14 @@ struct RelayClient: Sendable {
         let message = body?.error.message.map { HB1.cleanLabel($0, maxLength: 200) }
 
         // Codes are defined in docs/PROTOCOL.md §5 ("Error codes").
-        // unknown_device means the relay no longer knows this device (e.g. its database
-        // was reset), which is handled like an unlink: the user pairs again.
-        if status == 410 || code == "device_unlinked" || code == "unknown_device" {
+        if status == 410 || code == "device_unlinked" {
             return .deviceUnlinked
         }
         switch code {
+        case "unknown_device":
+            // Not an unlink by the agent (e.g. the relay database was reset, or the relay is
+            // misconfigured): keep the pairing and let the user decide to pair again.
+            return .deviceUnknown
         case "device_already_linked":
             return .deviceAlreadyLinked
         case "invalid_pairing_secret", "unknown_account":

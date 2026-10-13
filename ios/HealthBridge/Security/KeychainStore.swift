@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 import Security
 
 enum KeychainError: LocalizedError {
@@ -81,12 +82,27 @@ enum KeychainStore {
         }
     }
 
-    static func delete(_ item: Item) {
-        SecItemDelete(baseQuery(for: item) as CFDictionary)
+    /// Deleting an item that does not exist is not an error.
+    static func delete(_ item: Item) throws {
+        let status = SecItemDelete(baseQuery(for: item) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unexpectedStatus(status)
+        }
     }
 
-    static func deleteAll() {
-        Item.allCases.forEach(delete)
+    /// Tries every item, then throws the first failure.
+    static func deleteAll() throws {
+        var firstError: Error?
+        for item in Item.allCases {
+            do {
+                try delete(item)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            throw firstError
+        }
     }
 }
 
@@ -113,8 +129,8 @@ enum DeviceIdentityStore {
         return key
     }
 
-    static func deleteSigningKey() {
-        KeychainStore.delete(.deviceSigningKey)
+    static func deleteSigningKey() throws {
+        try KeychainStore.delete(.deviceSigningKey)
     }
 }
 
@@ -163,30 +179,49 @@ enum PairingStore {
     private static let encoder = JSONEncoder()
     private static let decoder = JSONDecoder()
 
-    static func load() -> PairingRecord? {
-        guard let data = try? KeychainStore.data(for: .pairing) else {
+    /// The stored record, or nil when this iPhone is not paired. Throws when the keychain
+    /// cannot be read right now (for example before the first unlock after a reboot) or the
+    /// record is damaged, so callers can tell "not paired" from "unknown".
+    static func loadRecord() throws -> PairingRecord? {
+        guard let data = try KeychainStore.data(for: .pairing) else {
             return nil
         }
-        return try? decoder.decode(PairingRecord.self, from: data)
+        do {
+            return try decoder.decode(PairingRecord.self, from: data)
+        } catch {
+            throw KeychainError.corruptItem
+        }
+    }
+
+    /// For UI state in the foreground, where the keychain is readable: an unreadable or
+    /// damaged record is logged and shown as "not paired", so the user can pair again
+    /// (saving a new record replaces the damaged one).
+    static func load() -> PairingRecord? {
+        do {
+            return try loadRecord()
+        } catch {
+            Log.storage.error("Pairing record unreadable: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     static func save(_ record: PairingRecord) throws {
         try KeychainStore.set(try encoder.encode(record), for: .pairing)
     }
 
-    static func delete() {
-        KeychainStore.delete(.pairing)
+    static func delete() throws {
+        try KeychainStore.delete(.pairing)
     }
 
-    static var isPaired: Bool {
-        load() != nil
-    }
-
-    /// Like `isPaired`, but nil when the keychain cannot be read right now (for example
-    /// before the first unlock after a reboot), so callers can avoid acting on a guess.
+    /// True when a pairing record exists (a damaged one included: syncs then fail with a
+    /// visible "pair again" error instead of silently doing nothing), false when there is
+    /// none, nil when the keychain cannot be read right now, so callers can avoid acting
+    /// on a guess.
     static func isPairedIfKnown() -> Bool? {
         do {
             return try KeychainStore.data(for: .pairing) != nil
+        } catch KeychainError.corruptItem {
+            return true
         } catch {
             return nil
         }

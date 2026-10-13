@@ -54,6 +54,8 @@ struct PairStep: View {
             case .ready:
                 QRScannerView { code in
                     decode(code)
+                } onStartFailed: {
+                    scanner = .failed
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             case .denied:
@@ -73,12 +75,14 @@ struct PairStep: View {
                     .buttonStyle(.bordered)
                 }
                 .padding()
-            case .unsupported:
+            case .unsupported, .failed:
                 VStack(spacing: 10) {
                     Image(systemName: "qrcode")
                         .font(.largeTitle)
                         .foregroundStyle(.secondary)
-                    Text("Scanning is not supported on this device. Paste the pairing code below.")
+                    Text(scanner == .failed
+                        ? "The camera could not start. Paste the pairing code below."
+                        : "Scanning is not supported on this device. Paste the pairing code below.")
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)

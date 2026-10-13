@@ -26,7 +26,7 @@ struct MetricsView: View {
                             do {
                                 try await model.requestHealthAuthorization()
                             } catch {
-                                authorizationError = (error as? LocalizedError)?.errorDescription
+                                authorizationError = error.localizedDescription
                             }
                         }
                     }
@@ -177,6 +177,11 @@ private struct ActivityRow: View {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(entry.event == .sync ? Color.red : Color.secondary)
+                }
+                if let warning = entry.warning {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
         }

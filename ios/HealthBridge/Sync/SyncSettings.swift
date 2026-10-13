@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum SyncMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case manual
@@ -144,6 +145,8 @@ struct SyncState: Codable, Equatable, Sendable {
     /// Number of days covered by the last completed backfill (0 = none yet).
     var backfilledDays: Int = 0
     var nextScheduledSync: Date?
+    /// Why "On new Health data" cannot work right now (HealthKit refused background delivery).
+    var backgroundDeliveryProblem: String?
 
     init() {}
 
@@ -154,6 +157,7 @@ struct SyncState: Codable, Equatable, Sendable {
         lastError = try? container.decode(String.self, forKey: .lastError)
         backfilledDays = (try? container.decode(Int.self, forKey: .backfilledDays)) ?? 0
         nextScheduledSync = try? container.decode(Date.self, forKey: .nextScheduledSync)
+        backgroundDeliveryProblem = try? container.decode(String.self, forKey: .backgroundDeliveryProblem)
     }
 }
 
@@ -217,7 +221,19 @@ enum SettingsStore {
     /// code is idempotent on the relay (docs/PROTOCOL.md §5).
     static func prepareFirstLaunchIfNeeded() {
         guard !defaults.bool(forKey: installedKey) else { return }
-        PairingStore.delete()
+        do {
+            try PairingStore.delete()
+        } catch {
+            // Keychain not writable right now: try again on the next launch. A pairing saved
+            // in the meantime replaces the stale record and calls `markInstalled()`.
+            Log.storage.error("Removing the stale pairing record failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        markInstalled()
+    }
+
+    /// Records that no pairing from a previous install is left in the keychain.
+    static func markInstalled() {
         defaults.set(true, forKey: installedKey)
     }
 }

@@ -40,6 +40,8 @@ struct ActivityLogEntry: Codable, Identifiable, Equatable, Sendable {
     var lastDay: String?
     var duration: TimeInterval = 0
     var errorMessage: String?
+    /// A sync that succeeded but left something out (optional, so older logs still decode).
+    var warning: String?
 
     var succeeded: Bool {
         errorMessage == nil
@@ -90,7 +92,13 @@ final class ActivityLogStore: @unchecked Sendable {
 
     func clear() {
         lock.lock()
-        try? FileManager.default.removeItem(at: fileURL)
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+        } catch CocoaError.fileNoSuchFile {
+            // Already empty.
+        } catch {
+            Log.storage.error("Clearing the activity log failed: \(error.localizedDescription, privacy: .public)")
+        }
         lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }

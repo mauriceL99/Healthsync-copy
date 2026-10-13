@@ -1,13 +1,15 @@
 import AVFoundation
+import os
 import SwiftUI
 import UIKit
 import Vision
 import VisionKit
 
 /// Live QR scanner based on VisionKit's `DataScannerViewController`.
-/// Reports the first payload that starts with `HB1:`.
+/// Reports the first payload that starts with `HB1:`, or once if the camera cannot start.
 struct QRScannerView: UIViewControllerRepresentable {
     var onCode: (String) -> Void
+    var onStartFailed: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onCode: onCode)
@@ -28,9 +30,18 @@ struct QRScannerView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
-        context.coordinator.onCode = onCode
-        if !scanner.isScanning {
-            try? scanner.startScanning()
+        let coordinator = context.coordinator
+        coordinator.onCode = onCode
+        // Try once: retrying on every view update would loop once the failure changes state.
+        guard !scanner.isScanning, !coordinator.startFailed else { return }
+        do {
+            try scanner.startScanning()
+        } catch {
+            coordinator.startFailed = true
+            Log.ui.error("Starting the QR scanner failed: \(error.localizedDescription, privacy: .public)")
+            // Report after this view update, not during it.
+            let onStartFailed = onStartFailed
+            Task { @MainActor in onStartFailed() }
         }
     }
 
@@ -41,6 +52,7 @@ struct QRScannerView: UIViewControllerRepresentable {
     @MainActor
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         var onCode: (String) -> Void
+        var startFailed = false
         private var lastDelivered: String?
 
         init(onCode: @escaping (String) -> Void) {
@@ -80,6 +92,8 @@ enum ScannerAvailability: Equatable {
     case ready
     case denied
     case unsupported
+    /// Supported and allowed, but the camera did not start (e.g. in use by another app).
+    case failed
 
     @MainActor
     static func resolve() async -> ScannerAvailability {

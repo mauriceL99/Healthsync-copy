@@ -265,4 +265,22 @@ final class HealthLogicTests: XCTestCase {
             XCTAssertEqual(group.category.rawValue, group.rawValue)
         }
     }
+
+    func testSkippedReadsWarning() {
+        XCTAssertNil(SyncEngine.skippedReadsWarning(0))
+        XCTAssertEqual(SyncEngine.skippedReadsWarning(1)?.hasPrefix("1 Health read failed"), true)
+        XCTAssertEqual(SyncEngine.skippedReadsWarning(3)?.hasPrefix("3 Health reads failed"), true)
+    }
+
+    /// Logs and sync state written before `warning` / `backgroundDeliveryProblem` existed
+    /// must still decode.
+    func testOlderLogAndStateStillDecode() throws {
+        let entryJSON = try JSONEncoder().encode(ActivityLogEntry(date: Date(timeIntervalSince1970: 0), event: .sync))
+        XCTAssertFalse(String(decoding: entryJSON, as: UTF8.self).contains("warning"))
+        XCTAssertNil(try JSONDecoder().decode(ActivityLogEntry.self, from: entryJSON).warning)
+
+        let state = try JSONDecoder().decode(SyncState.self, from: Data(#"{"backfilledDays":30}"#.utf8))
+        XCTAssertEqual(state.backfilledDays, 30)
+        XCTAssertNil(state.backgroundDeliveryProblem)
+    }
 }

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import os
 import UIKit
 
 /// Central UI state. All mutations happen on the main actor; heavy work runs in
@@ -175,6 +176,7 @@ final class AppModel: ObservableObject {
             keyID: payload.keyID
         )
         try PairingStore.save(record)
+        SettingsStore.markInstalled()
         SettingsStore.saveState(SyncState())
         SettingsStore.onboardingComplete = false
         ActivityLogStore.shared.append(ActivityLogEntry(date: Date(), event: .paired))
@@ -188,28 +190,28 @@ final class AppModel: ObservableObject {
     }
 
     /// Unlinks at the relay (`DELETE /v1/devices/self`) and wipes the keychain.
-    /// Returns false if the relay was unreachable (local data is removed anyway).
     @discardableResult
-    func unpair() async -> Bool {
+    func unpair() async -> UnpairResult {
         BackgroundSync.shared.cancelAll()
-        let reachedRelay = await SyncEngine.shared.unpair()
+        let result = await SyncEngine.shared.unpair()
         remoteStatus = nil
         status = .idle
         reload()
         BackgroundSync.shared.applyConfiguration()
-        return reachedRelay
+        return result
     }
 
     func refreshRemoteStatus() async {
-        guard let pairing,
-              let signingKey = try? DeviceIdentityStore.loadSigningKey(),
-              let client = try? RelayClient(relay: pairing.relay) else { return }
+        guard let pairing else { return }
         do {
+            guard let signingKey = try DeviceIdentityStore.loadSigningKey() else { return }
+            let client = try RelayClient(relay: pairing.relay)
             remoteStatus = try await client.deviceStatus(deviceID: pairing.deviceID, signingKey: signingKey)
         } catch RelayError.deviceUnlinked {
             PairingLifecycle.markUnlinkedByAgent()
         } catch {
-            // Keep the last known status; the home screen shows it as possibly outdated.
+            // Keep the last known status until the next refresh succeeds.
+            Log.sync.error("Device status refresh failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
