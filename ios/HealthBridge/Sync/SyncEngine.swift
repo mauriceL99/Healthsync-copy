@@ -268,6 +268,10 @@ actor SyncEngine {
                 ? "Reading Health data (\(index + 1) of \(plan.chunks.count))…"
                 : "Reading Health data…")
             let batch = try await builder.build(range: chunk, options: options, now: now)
+            completedSteps += 1
+            // A chunk without any data carries nothing for the agent; skipping it saves an
+            // envelope. Backfill progress is tracked by the plan, not by uploads.
+            if batch.isEmpty { continue }
             let plaintext = try batch.encodedJSON()
             report("Encrypting on this iPhone…")
             let envelope = try EnvelopeCrypto.seal(
@@ -277,7 +281,6 @@ actor SyncEngine {
                 kind: plan.kind,
                 compression: .deflate
             )
-            completedSteps += 1
             let size = envelope.ct.utf8.count + 512
             if !pending.isEmpty
                 && (pending.count >= HB1.maxEnvelopesPerRequest || pendingBytes + size > HB1.maxUploadBodyBytes) {

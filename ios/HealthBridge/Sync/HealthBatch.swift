@@ -6,7 +6,8 @@ struct HealthBatch: Codable, Equatable {
 
     var schema: Int = HealthBatch.schemaVersion
     var generatedAt: String
-    var timezone: String
+    /// IANA name of the device time zone; omitted when unknown.
+    var timezone: String?
     var source: BatchSource
     /// Keys are device-local calendar days `YYYY-MM-DD`.
     var days: [String: DayRecord]

@@ -231,9 +231,11 @@ enum EntitlementCache {
 }
 
 enum AppInfo {
+    /// The marketing version, or "0" when it is missing or unusable (never a plausible
+    /// made-up version).
     static var version: String {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
-        return sanitizedVersion(raw) ?? "1.0.0"
+        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        return sanitizedVersion(raw) ?? "0"
     }
 
     static var build: String {
@@ -275,12 +277,14 @@ enum AppInfo {
         value.range(of: #"^[A-Za-z]{2,16}[0-9]{0,3}(,[0-9]{1,3})?$"#, options: .regularExpression) != nil
     }
 
-    /// IANA time zone name matching `^[A-Za-z][A-Za-z0-9_+./-]{1,63}$`.
-    static var timeZoneIdentifier: String {
+    /// IANA time zone name matching `^[A-Za-z][A-Za-z0-9_+./-]{1,63}$`, or nil. Day keys
+    /// are always local, so claiming "UTC" for an unusual identifier would be wrong;
+    /// omitting the field lets the agent know the zone is unknown.
+    static var timeZoneIdentifier: String? {
         let identifier = TimeZone.current.identifier
         if identifier.range(of: #"^[A-Za-z][A-Za-z0-9_+./-]{1,63}$"#, options: .regularExpression) != nil {
             return identifier
         }
-        return "UTC"
+        return nil
     }
 }

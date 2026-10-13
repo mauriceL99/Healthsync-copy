@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import os
 
 enum HealthAccessError: LocalizedError {
     case unavailable
@@ -200,9 +201,13 @@ final class HealthKitService: @unchecked Sendable {
         range: DayRange
     ) async throws -> [String: DailyStatistic] {
         guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return [:] }
-        // Cumulative options on a discrete type (or vice versa) raise an exception: guard it.
+        // Cumulative options on a discrete type (or vice versa) raise an exception. The
+        // catalog must never produce that (pinned by HealthLogicTests); in release builds
+        // the metric is skipped instead of crashing.
         let isCumulative = type.aggregationStyle == .cumulative
         if isCumulative != options.contains(.cumulativeSum) {
+            assertionFailure("Statistics options do not match the aggregation style of \(identifier.rawValue)")
+            Log.sync.error("Skipped \(identifier.rawValue, privacy: .public): options do not match its aggregation style")
             return [:]
         }
         let predicate = HKQuery.predicateForSamples(withStart: range.start, end: range.end, options: .strictStartDate)

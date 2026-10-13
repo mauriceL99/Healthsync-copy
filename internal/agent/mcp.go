@@ -231,7 +231,7 @@ func (m *MCP) call(ctx context.Context, name string, raw json.RawMessage) (strin
 	}
 	switch name {
 	case "health_summary":
-		w, err := ResolveWindow(a.Period, a.Days, a.End, cov.LastDate)
+		w, err := ResolveWindow(a.Period, a.Days, a.End, cov.LastDate, m.Env.now())
 		if err != nil {
 			return "", nil, err
 		}
@@ -245,7 +245,7 @@ func (m *MCP) call(ctx context.Context, name string, raw json.RawMessage) (strin
 		if err != nil {
 			return "", nil, err
 		}
-		w, err := ResolveWindow("", firstPositive(a.Days, 30), a.End, cov.LastDate)
+		w, err := ResolveWindow("", firstPositive(a.Days, 30), a.End, cov.LastDate, m.Env.now())
 		if err != nil {
 			return "", nil, err
 		}
@@ -255,7 +255,7 @@ func (m *MCP) call(ctx context.Context, name string, raw json.RawMessage) (strin
 		}
 		return RenderSeries(series) + "\n" + Notice, series, nil
 	case "health_workouts":
-		w, err := ResolveWindow("", firstPositive(a.Days, 14), a.End, cov.LastDate)
+		w, err := ResolveWindow("", firstPositive(a.Days, 14), a.End, cov.LastDate, m.Env.now())
 		if err != nil {
 			return "", nil, err
 		}

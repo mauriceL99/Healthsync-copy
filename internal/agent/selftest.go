@@ -90,7 +90,7 @@ func SelfTest(ctx context.Context, env Env) error {
 		if err != nil {
 			return err
 		}
-		w, err := ResolveWindow("week", 0, "", cov.LastDate)
+		w, err := ResolveWindow("week", 0, "", cov.LastDate, time.Now())
 		if err != nil {
 			return err
 		}

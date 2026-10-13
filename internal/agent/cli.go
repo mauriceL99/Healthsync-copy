@@ -306,7 +306,7 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return err
 		}
 		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
-			win, err := ResolveWindow(w.period, w.days, w.end, cov.LastDate)
+			win, err := ResolveWindow(w.period, w.days, w.end, cov.LastDate, env.now())
 			if err != nil {
 				return err
 			}
@@ -352,7 +352,7 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return err
 		}
 		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
-			win, err := ResolveWindow("", w.days, w.end, cov.LastDate)
+			win, err := ResolveWindow("", w.days, w.end, cov.LastDate, env.now())
 			if err != nil {
 				return err
 			}
@@ -380,7 +380,7 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return err
 		}
 		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
-			win, err := ResolveWindow("", w.days, w.end, cov.LastDate)
+			win, err := ResolveWindow("", w.days, w.end, cov.LastDate, env.now())
 			if err != nil {
 				return err
 			}
@@ -438,7 +438,7 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return err
 		}
 		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
-			win, err := ResolveWindow("", w.days, w.end, cov.LastDate)
+			win, err := ResolveWindow("", w.days, w.end, cov.LastDate, env.now())
 			if err != nil {
 				return err
 			}
@@ -466,7 +466,7 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return err
 		}
 		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
-			win, err := ResolveWindow("", w.days, w.end, cov.LastDate)
+			win, err := ResolveWindow("", w.days, w.end, cov.LastDate, env.now())
 			if err != nil {
 				return err
 			}

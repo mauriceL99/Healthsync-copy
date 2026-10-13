@@ -62,6 +62,19 @@ enum MetricGroup: String, Codable, CaseIterable, Sendable {
     case vitals
     case nutrition
     case mindfulness
+
+    /// The user-facing category that enables this group. Exhaustive on purpose: a new
+    /// group must decide its category instead of silently landing in Activity.
+    var category: MetricCategory {
+        switch self {
+        case .activity: return .activity
+        case .heart: return .heart
+        case .body: return .body
+        case .vitals: return .vitals
+        case .nutrition: return .nutrition
+        case .mindfulness: return .mindfulness
+        }
+    }
 }
 
 enum MetricAggregation {
@@ -381,7 +394,7 @@ enum MetricCatalog {
     ) -> MetricDefinition {
         MetricDefinition(
             key: key,
-            category: MetricCategory(rawValue: group.rawValue) ?? .activity,
+            category: group.category,
             group: group,
             source: .quantity(identifier),
             unit: unit,

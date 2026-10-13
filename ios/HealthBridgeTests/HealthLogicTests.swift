@@ -1,3 +1,4 @@
+import HealthKit
 import XCTest
 @testable import HealthBridge
 
@@ -243,5 +244,25 @@ final class HealthLogicTests: XCTestCase {
         XCTAssertEqual(settings.categories, Set(MetricCategory.allCases))
         XCTAssertEqual(settings.effectiveMode(isPro: false), .manual)
         XCTAssertEqual(settings.effectiveMode(isPro: true), .scheduled)
+    }
+
+    /// HealthKit raises an exception for cumulative options on discrete types (and vice
+    /// versa); HealthKitService.dailyStatistics relies on the catalog never doing that.
+    func testQuantityAggregationsMatchHealthKitTypes() {
+        for metric in MetricCatalog.all {
+            guard case .quantity(let identifier) = metric.source else { continue }
+            let isCumulative = HKQuantityType(identifier).aggregationStyle == .cumulative
+            XCTAssertEqual(
+                isCumulative,
+                metric.aggregation.statisticsOption.contains(.cumulativeSum),
+                "\(metric.key) uses \(identifier.rawValue)"
+            )
+        }
+    }
+
+    func testEveryGroupMapsToItsOwnCategory() {
+        for group in MetricGroup.allCases {
+            XCTAssertEqual(group.category.rawValue, group.rawValue)
+        }
     }
 }

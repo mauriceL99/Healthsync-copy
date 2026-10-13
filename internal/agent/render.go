@@ -57,9 +57,17 @@ func RenderText(r Report) string {
 	}
 	if r.Sleep != nil {
 		s := r.Sleep
-		fmt.Fprintf(&b, "\nSleep nights\n  %d nights · avg asleep %s · deep %s · REM %s · core %s · awake %s\n",
-			s.Nights, formatDuration(s.AvgAsleepMin), formatDuration(s.AvgDeepMin), formatDuration(s.AvgREMMin), formatDuration(s.AvgCoreMin), formatDuration(s.AvgAwakeMin))
-		if s.AvgBedtime != "" {
+		line := fmt.Sprintf("  %d nights · avg asleep %s", s.Nights, formatDuration(s.AvgAsleepMin))
+		for _, stage := range []struct {
+			name string
+			v    *float64
+		}{{"deep", s.AvgDeepMin}, {"REM", s.AvgREMMin}, {"core", s.AvgCoreMin}, {"awake", s.AvgAwakeMin}} {
+			if stage.v != nil {
+				line += fmt.Sprintf(" · %s %s", stage.name, formatDuration(*stage.v))
+			}
+		}
+		fmt.Fprintf(&b, "\nSleep nights\n%s\n", line)
+		if s.AvgBedtime != "" && s.AvgWakeTime != "" {
 			fmt.Fprintf(&b, "  typical bedtime %s · wake-up %s · %d nights under 7 h\n", s.AvgBedtime, s.AvgWakeTime, s.NightsUnder7h)
 		}
 	}

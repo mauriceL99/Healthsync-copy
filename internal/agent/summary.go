@@ -37,16 +37,16 @@ type MetricStat struct {
 
 // SleepStat summarizes nights in the window.
 type SleepStat struct {
-	Nights        int     `json:"nights"`
-	AvgAsleepMin  float64 `json:"avg_asleep_min"`
-	AvgInBedMin   float64 `json:"avg_in_bed_min,omitempty"`
-	AvgDeepMin    float64 `json:"avg_deep_min,omitempty"`
-	AvgREMMin     float64 `json:"avg_rem_min,omitempty"`
-	AvgCoreMin    float64 `json:"avg_core_min,omitempty"`
-	AvgAwakeMin   float64 `json:"avg_awake_min,omitempty"`
-	NightsUnder7h int     `json:"nights_under_7h"`
-	AvgBedtime    string  `json:"avg_bedtime,omitempty"`
-	AvgWakeTime   string  `json:"avg_wake_time,omitempty"`
+	Nights        int      `json:"nights"`
+	AvgAsleepMin  float64  `json:"avg_asleep_min"`
+	AvgInBedMin   *float64 `json:"avg_in_bed_min,omitempty"`
+	AvgDeepMin    *float64 `json:"avg_deep_min,omitempty"`
+	AvgREMMin     *float64 `json:"avg_rem_min,omitempty"`
+	AvgCoreMin    *float64 `json:"avg_core_min,omitempty"`
+	AvgAwakeMin   *float64 `json:"avg_awake_min,omitempty"`
+	NightsUnder7h int      `json:"nights_under_7h"`
+	AvgBedtime    string   `json:"avg_bedtime,omitempty"`
+	AvgWakeTime   string   `json:"avg_wake_time,omitempty"`
 }
 
 // WorkoutTypeStat aggregates workouts of one activity type.
@@ -107,8 +107,8 @@ func (w Window) Previous() Window {
 }
 
 // ResolveWindow turns period/days/end into a date window. Without --end the
-// window ends at the most recent stored day.
-func ResolveWindow(period string, days int, end, latest string) (Window, error) {
+// window ends at the most recent stored day, or today when nothing is stored.
+func ResolveWindow(period string, days int, end, latest string, now time.Time) (Window, error) {
 	if days <= 0 {
 		switch period {
 		case "", "week", "weekly":
@@ -130,7 +130,7 @@ func ResolveWindow(period string, days int, end, latest string) (Window, error) 
 	if days > 3660 {
 		return Window{}, errors.New("window too large (max 3660 days)")
 	}
-	endDate := firstNonEmpty(end, latest, time.Now().Format("2006-01-02"))
+	endDate := firstNonEmpty(end, latest, now.Format("2006-01-02"))
 	to, err := time.Parse("2006-01-02", endDate)
 	if err != nil {
 		return Window{}, fmt.Errorf("invalid end date %q (use YYYY-MM-DD)", endDate)
@@ -205,23 +205,71 @@ func metricStat(m healthdata.Metric, days, prevDays map[string]healthdata.Day) (
 		pa := round(prevSum/float64(prevN), 2)
 		change := round(s.Average-pa, 2)
 		s.PreviousAverage, s.Change = &pa, &change
-		s.Trend = "flat"
+		s.Trend = trend(change, pa)
 		if pa != 0 {
 			pct := round(change/math.Abs(pa)*100, 1)
 			s.ChangePct = &pct
-			if pct >= 3 {
-				s.Trend = "up"
-			} else if pct <= -3 {
-				s.Trend = "down"
-			}
 		}
 	}
 	return s, true
 }
 
+// trendThresholdPct is the relative change below which a metric reads as
+// "flat": night-to-night and day-to-day noise of wearable data is larger than
+// that, so smaller moves would be over-interpreted by people and agents.
+const trendThresholdPct = 3.0
+
+// trend classifies a change against the previous period's average. With a
+// previous average of 0 there is no percentage, so the direction alone counts.
+func trend(change, previous float64) string {
+	if previous == 0 {
+		switch {
+		case change > 0:
+			return "up"
+		case change < 0:
+			return "down"
+		}
+		return "flat"
+	}
+	pct := change / math.Abs(previous) * 100
+	switch {
+	case pct >= trendThresholdPct:
+		return "up"
+	case pct <= -trendThresholdPct:
+		return "down"
+	}
+	return "flat"
+}
+
+// nightsUnderMin is the 7-hour threshold used for "nights under 7 h".
+const nightsUnderMin = 7 * 60
+
+// meanAcc averages only the nights that actually report a value, so a stage
+// missing from some nights does not count as 0 minutes.
+type meanAcc struct {
+	sum float64
+	n   int
+}
+
+func (m *meanAcc) add(v any) {
+	if f, ok := num(v); ok {
+		m.sum += f
+		m.n++
+	}
+}
+
+func (m meanAcc) mean() *float64 {
+	if m.n == 0 {
+		return nil
+	}
+	v := round(m.sum/float64(m.n), 1)
+	return &v
+}
+
 func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 	var st SleepStat
-	var asleep, inBed, deep, rem, core, awake float64
+	var asleep float64
+	var inBed, deep, rem, core, awake meanAcc
 	var bedMinutes, wakeMinutes []float64
 	for _, date := range SortedDates(days) {
 		sleep := days[date]["sleep"]
@@ -234,19 +282,14 @@ func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 		}
 		st.Nights++
 		asleep += a
-		if a < 420 {
+		if a < nightsUnderMin {
 			st.NightsUnder7h++
 		}
-		v, _ := num(sleep["in_bed_min"])
-		inBed += v
-		v, _ = num(sleep["deep_min"])
-		deep += v
-		v, _ = num(sleep["rem_min"])
-		rem += v
-		v, _ = num(sleep["core_min"])
-		core += v
-		v, _ = num(sleep["awake_min"])
-		awake += v
+		inBed.add(sleep["in_bed_min"])
+		deep.add(sleep["deep_min"])
+		rem.add(sleep["rem_min"])
+		core.add(sleep["core_min"])
+		awake.add(sleep["awake_min"])
 		if t, ok := sleepTime(sleep["bedtime"], loc); ok {
 			bedMinutes = append(bedMinutes, t)
 		}
@@ -257,9 +300,8 @@ func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 	if st.Nights == 0 {
 		return nil
 	}
-	n := float64(st.Nights)
-	st.AvgAsleepMin, st.AvgInBedMin = round(asleep/n, 1), round(inBed/n, 1)
-	st.AvgDeepMin, st.AvgREMMin, st.AvgCoreMin, st.AvgAwakeMin = round(deep/n, 1), round(rem/n, 1), round(core/n, 1), round(awake/n, 1)
+	st.AvgAsleepMin = round(asleep/float64(st.Nights), 1)
+	st.AvgInBedMin, st.AvgDeepMin, st.AvgREMMin, st.AvgCoreMin, st.AvgAwakeMin = inBed.mean(), deep.mean(), rem.mean(), core.mean(), awake.mean()
 	st.AvgBedtime, st.AvgWakeTime = clockMean(bedMinutes), clockMean(wakeMinutes)
 	return &st
 }
