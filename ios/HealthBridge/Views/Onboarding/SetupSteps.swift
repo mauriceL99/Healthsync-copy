@@ -25,10 +25,7 @@ struct CategoryToggleList: View {
                     }
                 }
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
-                )
+                .tileBackground()
             }
             if model.settings.categories.contains(.workouts) {
                 Toggle(isOn: heartRateDetailsBinding) {
@@ -52,10 +49,7 @@ struct CategoryToggleList: View {
                     }
                 }
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
-                )
+                .tileBackground()
             }
         }
     }
@@ -175,7 +169,7 @@ struct HealthPermissionStep: View {
             try await model.requestHealthAuthorization()
             onContinue()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
 }
@@ -233,10 +227,7 @@ struct HistoryWindowPicker: View {
                             .font(.title3)
                     }
                     .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color(.secondarySystemBackground))
-                    )
+                    .tileBackground()
                 }
                 .buttonStyle(.plain)
             }

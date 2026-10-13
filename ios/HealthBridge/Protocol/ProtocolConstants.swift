@@ -56,18 +56,7 @@ enum HB1 {
         guard value.hasPrefix(prefix) else { return false }
         let rest = value.utf8.dropFirst(prefix.utf8.count)
         guard rest.count == 22 else { return false }
-        return rest.allSatisfy { byte in
-            switch byte {
-            case UInt8(ascii: "A")...UInt8(ascii: "Z"),
-                 UInt8(ascii: "a")...UInt8(ascii: "z"),
-                 UInt8(ascii: "0")...UInt8(ascii: "9"),
-                 UInt8(ascii: "-"),
-                 UInt8(ascii: "_"):
-                return true
-            default:
-                return false
-            }
-        }
+        return rest.allSatisfy(B64URL.isAlphabet)
     }
 
     /// Removes control characters and trims a human label (agent or device name).

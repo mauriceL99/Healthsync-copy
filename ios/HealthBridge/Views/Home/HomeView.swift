@@ -138,13 +138,14 @@ private struct SyncNowCard: View {
             }
             .primaryActionStyle()
             .disabled(model.isSyncing)
-            .sensoryFeedback(.success, trigger: successCount)
+            .sensoryFeedback(.success, trigger: lastSuccessDate)
 
             statusLine
         }
     }
 
-    private var successCount: Date? {
+    /// Changes with every successful sync, which triggers the success haptic.
+    private var lastSuccessDate: Date? {
         if case .succeeded(let report) = model.status {
             return report.finishedAt
         }
@@ -199,7 +200,7 @@ private struct HealthAccessBanner: View {
                     do {
                         try await model.requestHealthAuthorization()
                     } catch {
-                        errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        errorMessage = error.localizedDescription
                     }
                 }
             }
@@ -310,7 +311,7 @@ private struct NavigationTiles: View {
     }
 
     private func tile(title: String, detail: String, symbol: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Card(spacing: 8) {
             Image(systemName: symbol)
                 .font(.title2)
                 .foregroundStyle(tint)
@@ -320,12 +321,6 @@ private struct NavigationTiles: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
     }
 }
 

@@ -120,8 +120,12 @@ struct SyncSettings: Codable, Equatable, Sendable {
     }
 
     /// The history window that is actually used for the current entitlement.
+    func effectiveHistoryWindow(isPro: Bool) -> HistoryWindow {
+        !isPro && historyWindow.requiresPro ? .freeLimit : historyWindow
+    }
+
     func effectiveHistoryDays(isPro: Bool) -> Int {
-        isPro ? historyWindow.rawValue : min(historyWindow.rawValue, HistoryWindow.freeLimit.rawValue)
+        effectiveHistoryWindow(isPro: isPro).rawValue
     }
 
     func effectiveMode(isPro: Bool) -> SyncMode {

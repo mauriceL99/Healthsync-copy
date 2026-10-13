@@ -11,6 +11,14 @@ extension View {
             .buttonBorderShape(.roundedRectangle(radius: 14))
     }
 
+    /// Rounded background for selectable rows and input fields in onboarding.
+    func tileBackground(cornerRadius: CGFloat = 14) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+    }
+
     /// Secondary button; sizes to its label like `primaryActionStyle()`.
     func secondaryActionStyle() -> some View {
         buttonStyle(.bordered)
@@ -22,10 +30,11 @@ extension View {
 // MARK: - Cards
 
 struct Card<Content: View>: View {
+    var spacing: CGFloat = 12
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: spacing) {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

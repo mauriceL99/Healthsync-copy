@@ -177,7 +177,7 @@ struct SettingsView: View {
 
     private var historyBinding: Binding<HistoryWindow> {
         Binding(
-            get: { model.settings.historyWindow.requiresPro && !purchases.isPro ? .freeLimit : model.settings.historyWindow },
+            get: { model.settings.effectiveHistoryWindow(isPro: purchases.isPro) },
             set: { window in
                 if window.requiresPro && !purchases.isPro {
                     showPaywall = true

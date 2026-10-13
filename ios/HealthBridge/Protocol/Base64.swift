@@ -54,7 +54,7 @@ enum B64URL {
         return data
     }
 
-    private static func isAlphabet(_ byte: UInt8) -> Bool {
+    static func isAlphabet(_ byte: UInt8) -> Bool {
         switch byte {
         case UInt8(ascii: "A")...UInt8(ascii: "Z"),
              UInt8(ascii: "a")...UInt8(ascii: "z"),

@@ -146,20 +146,11 @@ struct PairingRecord: Codable, Equatable, Sendable {
     var keyID: String
 
     var displayName: String {
-        if let agentName, !agentName.isEmpty {
-            return agentName
-        }
-        return "AI Agent"
+        AgentDisplay.name(agentName)
     }
 
     var relayHost: String {
-        guard let components = URLComponents(string: relay), let host = components.host else {
-            return relay
-        }
-        if let port = components.port {
-            return "\(host):\(port)"
-        }
-        return host
+        AgentDisplay.relayHost(relay)
     }
 
     func recipientKey() throws -> Curve25519.KeyAgreement.PublicKey {

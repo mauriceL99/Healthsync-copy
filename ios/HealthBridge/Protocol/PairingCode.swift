@@ -22,14 +22,33 @@ struct PairingPayload: Equatable, Identifiable, Sendable {
     let keyID: String
 
     var displayName: String {
+        AgentDisplay.name(name)
+    }
+
+    var relayHost: String {
+        AgentDisplay.relayHost(relay)
+    }
+}
+
+/// Display rules shared by a scanned pairing code and the stored pairing, so the
+/// confirmation screen and Settings show the same values.
+enum AgentDisplay {
+    static func name(_ name: String?) -> String {
         if let name, !name.isEmpty {
             return name
         }
         return "AI Agent"
     }
 
-    var relayHost: String {
-        URLComponents(string: relay)?.host ?? relay
+    /// Host plus port, if any (self-hosted relays often use one).
+    static func relayHost(_ relay: String) -> String {
+        guard let components = URLComponents(string: relay), let host = components.host else {
+            return relay
+        }
+        if let port = components.port {
+            return "\(host):\(port)"
+        }
+        return host
     }
 }
 

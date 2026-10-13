@@ -117,10 +117,7 @@ struct PairStep: View {
                 .autocorrectionDisabled()
                 .focused($codeFieldFocused)
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
-                )
+                .tileBackground(cornerRadius: 12)
                 .submitLabel(.done)
         }
     }
@@ -132,7 +129,7 @@ struct PairStep: View {
             codeFieldFocused = false
             onDecoded(payload)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Invalid pairing code."
+            errorMessage = error.localizedDescription
         }
     }
 }
@@ -204,7 +201,7 @@ struct ConfirmPairingStep: View {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             onLinked()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
 }
