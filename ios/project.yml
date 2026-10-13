@@ -71,6 +71,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.healthbridge.tests
         GENERATE_INFOPLIST_FILE: YES
+        # Explicit host app so @testable import works with any XcodeGen version.
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/HealthBridge.app/HealthBridge
+        BUNDLE_LOADER: $(TEST_HOST)
 
 schemes:
   HealthBridge:
