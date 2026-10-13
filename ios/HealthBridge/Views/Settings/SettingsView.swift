@@ -15,7 +15,9 @@ struct SettingsView: View {
         Form {
             agentSection
             syncSection
-            proSection
+            if AppEdition.sellsPro {
+                proSection
+            }
             privacySection
             aboutSection
             unpairSection

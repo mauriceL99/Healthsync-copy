@@ -1,6 +1,7 @@
 # XcodeGen spec for the HealthBridge iOS app.
-# Generate the Xcode project with:  brew install xcodegen && xcodegen
-# (run inside the ios/ directory). The generated HealthBridge.xcodeproj is not checked in.
+# On a Mac, run ./setup.sh once: it asks for your Apple team and bundle-ID prefix, writes
+# Configuration/Local.xcconfig (not checked in) and generates HealthBridge.xcodeproj.
+# Afterwards `xcodegen` alone regenerates the project with the same values.
 
 name: HealthBridge
 
@@ -12,6 +13,12 @@ options:
   developmentLanguage: en
   groupSortPosition: top
 
+# Team (DEVELOPMENT_TEAM) and bundle-ID prefix (HB_BUNDLE_ID_PREFIX) come from here; the
+# file includes Configuration/Local.xcconfig written by setup.sh.
+configFiles:
+  Debug: Configuration/Signing.xcconfig
+  Release: Configuration/Signing.xcconfig
+
 settings:
   base:
     MARKETING_VERSION: "1.0.0"
@@ -19,8 +26,6 @@ settings:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: minimal
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
-    # Set your Apple Developer team ID here or in Xcode (Signing & Capabilities).
-    DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
@@ -38,10 +43,10 @@ targets:
       - path: HealthBridge
     settings:
       base:
-        # Placeholder bundle identifier. Replace com.example with your own reverse domain.
-        # Background-task and product IDs are derived from it (AppIdentifiers.swift);
-        # update Configuration/Products.storekit and App Store Connect to match.
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.healthbridge
+        # Background-task, keychain and product IDs are derived from the bundle ID
+        # (AppIdentifiers.swift). For the store edition, Configuration/Products.storekit
+        # and App Store Connect must use the same prefix.
+        PRODUCT_BUNDLE_IDENTIFIER: $(HB_BUNDLE_ID_PREFIX).healthbridge
         PRODUCT_NAME: HealthBridge
         INFOPLIST_FILE: HealthBridge/Info.plist
         GENERATE_INFOPLIST_FILE: NO
@@ -57,8 +62,9 @@ targets:
           enabled: 1
         com.apple.BackgroundModes:
           enabled: 1
-        com.apple.InAppPurchase:
-          enabled: 1
+        # Store edition only (needs a paid developer account): add
+        #   com.apple.InAppPurchase: { enabled: 1 }
+        # and STORE_EDITION to SWIFT_ACTIVE_COMPILATION_CONDITIONS (ios/README.md).
 
   HealthBridgeTests:
     type: bundle.unit-test
@@ -70,7 +76,7 @@ targets:
       - target: HealthBridge
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.healthbridge.tests
+        PRODUCT_BUNDLE_IDENTIFIER: $(HB_BUNDLE_ID_PREFIX).healthbridge.tests
         GENERATE_INFOPLIST_FILE: YES
         # Explicit host app so @testable import works with any XcodeGen version.
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/HealthBridge.app/HealthBridge

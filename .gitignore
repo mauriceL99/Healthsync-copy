@@ -11,3 +11,6 @@ ios/*.xcodeproj/
 ios/**/xcuserdata/
 ios/DerivedData/
 .DS_Store
+
+# Personal signing values written by ios/setup.sh
+ios/Configuration/Local.xcconfig

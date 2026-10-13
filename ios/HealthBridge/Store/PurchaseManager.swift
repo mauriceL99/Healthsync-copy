@@ -18,6 +18,9 @@ enum PurchaseError: LocalizedError {
 /// Free: manual sync and `HistoryWindow.freeLimit` of history.
 /// Pro: scheduled and on-new-data background sync, up to `HistoryWindow.proLimit` of history
 /// and workout heart-rate details.
+///
+/// Only the store edition sells Pro (`AppEdition.sellsPro`). The personal edition is always
+/// Pro and never contacts the App Store.
 @MainActor
 final class PurchaseManager: ObservableObject {
     nonisolated static let lifetimeProductID = AppIdentifiers.proLifetimeProduct
@@ -33,6 +36,10 @@ final class PurchaseManager: ObservableObject {
     private var updatesTask: Task<Void, Never>?
 
     init() {
+        guard AppEdition.sellsPro else {
+            isPro = true
+            return
+        }
         isPro = EntitlementCache.isPro
         updatesTask = Task.detached(priority: .background) { [weak self] in
             for await result in Transaction.updates {
@@ -112,6 +119,7 @@ final class PurchaseManager: ObservableObject {
 
     /// Checks `Transaction.currentEntitlements`; usable from background tasks.
     nonisolated static func verifiedProEntitlement() async -> Bool {
+        guard AppEdition.sellsPro else { return true }
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
                   productIDs.contains(transaction.productID),

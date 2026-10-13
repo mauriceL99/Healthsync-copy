@@ -31,7 +31,7 @@ enum KeychainStore {
         case pairing = "pairing-record"
     }
 
-    private static let service = "com.example.healthbridge"
+    private static let service = AppIdentifiers.base
 
     private static func baseQuery(for item: Item) -> [String: Any] {
         [

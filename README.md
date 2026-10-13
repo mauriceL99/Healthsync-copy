@@ -29,7 +29,7 @@ kompatibel. Name und Branding sind bewusst andere.
 
 | Verzeichnis | Inhalt |
 | --- | --- |
-| [`ios/`](ios/) | SwiftUI-App: Pairing per QR, Metrikauswahl, HealthKit-Auslese, Verschlüsselung mit CryptoKit, Sync manuell, per Zeitplan oder bei neuen Health-Daten, Pro-Abo über StoreKit 2 |
+| [`ios/`](ios/) | SwiftUI-App: Pairing per QR, Metrikauswahl, HealthKit-Auslese, Verschlüsselung mit CryptoKit, Sync manuell, per Zeitplan oder bei neuen Health-Daten. Standard ist die persönliche Edition (alles freigeschaltet); ein Pro-Abo über StoreKit 2 gibt es nur in der Store-Edition |
 | [`cmd/healthbridge`](cmd/healthbridge) | Agent-CLI: `onboard`, `fetch`, `summary`, `series`, `workouts`, `dashboard`, `export`, `mcp`, … |
 | [`cmd/healthbridge-relay`](cmd/healthbridge-relay) | Selbst hostbarer Relay-Server (eine Go-Binary, SQLite, Docker + Caddy) |
 | [`integrations/`](integrations/) | Claude-Code-Plugin (MCP + Skill + `/health`), Codex, OpenClaw, generischer Skill |
@@ -37,6 +37,9 @@ kompatibel. Name und Branding sind bewusst andere.
 | [`testdata/protocol_vectors.json`](testdata/protocol_vectors.json) | Krypto-Testvektoren, gemeinsam für Go und Swift, zusätzlich mit Python `cryptography` gegengeprüft |
 
 ## Schnellstart
+
+> **Auf dem Mac mit iPhone:** Die Schritt-für-Schritt-Anleitung von Xcode bis Claude Code
+> steht in [`docs/MAC_START.md`](docs/MAC_START.md).
 
 ### 1. Bauen
 

@@ -45,3 +45,11 @@ jobs:
             -destination "platform=iOS Simulator,name=$DEVICE" \
             CODE_SIGNING_ALLOWED=NO | tail -n 80
           exit ${PIPESTATUS[0]}
+      - name: Build store edition (StoreKit code stays compilable)
+        run: |
+          cd ios
+          xcodebuild build -project HealthBridge.xcodeproj -scheme HealthBridge \
+            -destination "generic/platform=iOS Simulator" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS='DEBUG STORE_EDITION' \
+            CODE_SIGNING_ALLOWED=NO | tail -n 40
+          exit ${PIPESTATUS[0]}

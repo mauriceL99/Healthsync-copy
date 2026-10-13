@@ -1,0 +1,12 @@
+// Signing for your own iPhone. Do not put personal values here: ./setup.sh writes them
+// to Local.xcconfig (not checked in), which overrides these defaults.
+//
+// DEVELOPMENT_TEAM     Your Apple team ID (10 characters). A free Apple ID works too
+//                      (Personal Team); see docs/MAC_START.md.
+// HB_BUNDLE_ID_PREFIX  A reverse domain, e.g. de.maurice. The app becomes
+//                      <prefix>.healthbridge, which must be unique among all Apple
+//                      developers when you use a free Apple ID.
+DEVELOPMENT_TEAM =
+HB_BUNDLE_ID_PREFIX = com.example
+
+#include? "Local.xcconfig"

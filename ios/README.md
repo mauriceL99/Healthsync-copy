@@ -16,12 +16,15 @@ Requests, Relay-API, Envelope-Verschlüsselung) und
 
 * macOS mit **Xcode 15.3** oder neuer (iOS-17-SDK, Swift 5.10), besser Xcode 16
 * [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-* Ein Apple-Developer-Account (HealthKit funktioniert nur mit Signierung; für
-  Background Delivery und In-App-Käufe ist ein bezahlter Account nötig)
+* Eine Apple-ID zum Signieren. Für das eigene iPhone genügt eine kostenlose (App läuft
+  dann 7 Tage). TestFlight und die Store-Edition brauchen das Developer Program.
+  Unterschiede: [`docs/MAC_START.md`](../docs/MAC_START.md)
 * Ein echtes iPhone für HealthKit-Tests (der Simulator hat keine echten Health-Daten
   und keine Kamera)
 
 ## Projekt erzeugen
+
+Am einfachsten mit `./setup.sh` (siehe „Signierung und Team“). Von Hand:
 
 ```bash
 brew install xcodegen
@@ -40,27 +43,32 @@ Projekteinstellungen (aus `project.yml`):
 | Targets | `HealthBridge` (App), `HealthBridgeTests` (Unit-Tests) |
 | Deployment Target | iOS 17.0, nur iPhone |
 | Swift | Swift-5-Sprachmodus, `SWIFT_STRICT_CONCURRENCY = minimal` |
-| Bundle-ID | `com.example.healthbridge` (**Platzhalter**) |
+| Bundle-ID | `<HB_BUNDLE_ID_PREFIX>.healthbridge`, Präfix aus `Configuration/Local.xcconfig` (Standard `com.example`) |
+| Edition | persönlich (Standard, alles freigeschaltet) oder Store (`STORE_EDITION`, siehe unten) |
 | Info.plist | `HealthBridge/Info.plist` (von Hand gepflegt, nicht generiert) |
 | Entitlements | `HealthBridge/HealthBridge.entitlements` |
 | StoreKit-Konfiguration | `Configuration/Products.storekit` (im Scheme hinterlegt) |
 
 ## Signierung und Team
 
-1. In `project.yml` `DEVELOPMENT_TEAM` auf die eigene Team-ID setzen (oder in Xcode
-   unter *Signing & Capabilities* das Team wählen).
-2. Die Platzhalter-Bundle-ID `com.example.healthbridge` durch eine eigene ersetzen,
-   z. B. `de.meinname.healthbridge`:
-   * `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` (App und Tests). Die IDs der
-     Hintergrund-Tasks (`<bundle-id>.refresh`/`.backfill`, auch in `Info.plist`) und der
-     Produkte (`<bundle-id>.pro.lifetime`/`.pro.yearly`) leitet die App daraus ab
-     (`HealthBridge/App/AppIdentifiers.swift`).
-   * Dieselben Produkt-IDs in `Configuration/Products.storekit` und in App Store Connect
-     anlegen.
-   * Keychain-Service in `HealthBridge/Security/KeychainStore.swift` (optional; eine
-     Änderung macht vorhandene Keychain-Einträge unerreichbar).
-3. Automatische Signierung legt die App-ID mit den Capabilities aus der
-   Entitlements-Datei an.
+Auf dem Mac genügt einmal:
+
+```bash
+cd ios
+./setup.sh
+```
+
+Das Skript fragt Team-ID (wird aus dem Zertifikat „Apple Development“ erkannt) und
+Bundle-ID-Präfix ab und schreibt beides nach `Configuration/Local.xcconfig` (nicht
+eingecheckt). `Configuration/Signing.xcconfig` bindet diese Datei ein. Danach erzeugt
+das Skript das Projekt und öffnet Xcode. Schritt für Schritt inklusive iPhone, Relay
+und Claude Code: [`docs/MAC_START.md`](../docs/MAC_START.md).
+
+Aus der Bundle-ID leitet die App ab (`HealthBridge/App/AppIdentifiers.swift`):
+Hintergrund-Tasks (`<bundle-id>.refresh`/`.backfill`, auch in `Info.plist`),
+Keychain-Service und Produkt-IDs (`<bundle-id>.pro.lifetime`/`.pro.yearly`).
+Automatische Signierung legt die App-ID mit den Capabilities aus der
+Entitlements-Datei an.
 
 ## Capabilities
 
@@ -110,26 +118,53 @@ erfolgreichen Sync wird erneut synchronisiert.
 `NSCameraUsageDescription` für den QR-Scanner (VisionKit `DataScannerViewController`).
 Ohne Kamera kann der Pairing-Code (`HB1:…`) eingefügt werden.
 
-## StoreKit testen
+## Editionen
 
-Das Scheme verweist auf `Configuration/Products.storekit`. Damit funktionieren Käufe
-im Simulator und auf dem Gerät ohne App Store Connect:
+| | Persönlich (Standard) | Store (`STORE_EDITION`) |
+| --- | --- | --- |
+| Gedacht für | eigenes iPhone, Freunde, TestFlight | App Store |
+| Funktionen | alles freigeschaltet | Kostenlos/Pro wie unten |
+| App-Store-Kontakt | keiner (kein StoreKit-Aufruf) | StoreKit 2 |
+| Pro-Bereich in Settings, Paywall | ausgeblendet | sichtbar |
+| Apple-Konto | kostenlose Apple-ID genügt | Developer Program |
 
-| Produkt-ID | Typ |
+Die CI baut beide Editionen, damit der StoreKit-Code nicht unbemerkt veraltet.
+
+### Store-Edition
+
+1. In `project.yml` beim Target `HealthBridge` ergänzen:
+   ```yaml
+   settings:
+     base:
+       SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) STORE_EDITION
+   attributes:
+     SystemCapabilities:
+       com.apple.InAppPurchase:
+         enabled: 1
+   ```
+2. Produkt-IDs in `Configuration/Products.storekit` und App Store Connect auf
+   `<bundle-id>.pro.lifetime` / `<bundle-id>.pro.yearly` setzen.
+3. `xcodegen` ausführen.
+
+Das Scheme verweist auf `Configuration/Products.storekit`. Damit funktionieren Käufe der
+Store-Edition im Simulator und auf dem Gerät ohne App Store Connect:
+
+| Produkt-ID (Platzhalter-Präfix) | Typ |
 | --- | --- |
 | `com.example.healthbridge.pro.lifetime` | Non-Consumable |
 | `com.example.healthbridge.pro.yearly` | Auto-Renewable (Gruppe „HealthBridge Pro“, 1 Woche gratis) |
 
 *Debug › StoreKit › Manage Transactions…* zeigt die Testkäufe; dort lassen sich Käufe
-löschen, erstatten oder Verlängerungen beschleunigen. Für TestFlight und den App
-Store müssen dieselben Produkte in App Store Connect angelegt werden.
+löschen, erstatten oder Verlängerungen beschleunigen.
 
-| | Kostenlos | Pro |
+| Store-Edition | Kostenlos | Pro |
 | --- | --- | --- |
 | Manueller Sync | ✓ | ✓ |
 | Geplanter Sync / Sync bei neuen Daten | – | ✓ |
 | Verlauf | 7 Tage | bis 365 Tage |
 | Workout-Herzfrequenzdetails (Zonen, Kurve, Erholung) | – | ✓ |
+
+Store-Texte, Datenschutz-Entwurf und App-Privacy-Angaben: [`docs/store/`](../docs/store/).
 
 ## Gegen ein lokales Relay testen
 
