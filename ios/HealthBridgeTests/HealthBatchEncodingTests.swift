@@ -37,12 +37,13 @@ final class HealthBatchEncodingTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    /// Filled from the production catalog, so `testDayKeys` checks catalog + encoding
+    /// against the keys written down from docs/DATA_SCHEMA.md.
     private func fullBatch() -> HealthBatch {
         var day = DayRecord()
-        for (group, keys) in specKeys {
-            for key in keys {
-                day.set(1, key: key, in: group)
-            }
+        for metric in MetricCatalog.all {
+            guard let group = metric.group else { continue }
+            day.set(1, key: metric.key, in: group)
         }
         day.sleep = SleepRecord(
             inBedMin: 452, asleepMin: 431, coreMin: 271, deepMin: 62, remMin: 98, awakeMin: 18, unspecifiedMin: 0,

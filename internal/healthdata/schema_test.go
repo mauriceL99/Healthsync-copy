@@ -54,8 +54,7 @@ func TestSanitizerDropsUntrustedContent(t *testing.T) {
 	    {"id": "6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f31", "type": "Running; DROP TABLE", "start": "2026-10-12T16:00:00Z", "end": "2026-10-12T16:30:00Z"}
 	  ]
 	}`
-	// resting_bpm 1e309 overflows float64 and must be rejected by the decoder path.
-	raw = strings.Replace(raw, "1e309", "300", 1)
+	// resting_bpm 1e309 overflows float64: only that value is dropped, not the batch.
 	b, rep, err := Parse([]byte(raw))
 	if err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -213,7 +214,7 @@ func (s *Server) authenticate(r *http.Request, mode authMode, body []byte) (cont
 			if json.Unmarshal(body, &req) != nil || req.Account != account {
 				return nil, fail(http.StatusBadRequest, "invalid_request", "account in body must match HB-Key")
 			}
-			if pub, err = protocol.DecodeB64(req.Sig, ed25519.PublicKeySize); err != nil {
+			if pub, err = protocol.DecodeB64(req.Sig, protocol.PublicKeySize); err != nil {
 				return nil, fail(http.StatusBadRequest, "invalid_request", "invalid sig public key")
 			}
 		} else {
@@ -249,7 +250,7 @@ func (s *Server) authenticate(r *http.Request, mode authMode, body []byte) (cont
 		if json.Unmarshal(body, &req) != nil {
 			return nil, fail(http.StatusBadRequest, "invalid_request", "invalid JSON body")
 		}
-		if pub, err = protocol.DecodeB64(req.DeviceSig, ed25519.PublicKeySize); err != nil {
+		if pub, err = protocol.DecodeB64(req.DeviceSig, protocol.PublicKeySize); err != nil {
 			return nil, fail(http.StatusBadRequest, "invalid_request", "invalid device_sig")
 		}
 		nonceKey = h.Key + ":" + req.DeviceSig
@@ -300,12 +301,13 @@ func (s *Server) registerAccount(_ http.ResponseWriter, r *http.Request, body []
 			return nil, 0, fail(http.StatusForbidden, "registration_token_required", "this relay requires a registration token for new accounts")
 		}
 	}
-	sig, _ := protocol.DecodeB64(req.Sig, 32)
-	enc, err := protocol.DecodeB64(req.Enc, 32)
+	// sig was decoded and checked by the authAccountRegistration middleware.
+	sig, _ := protocol.DecodeB64(req.Sig, protocol.PublicKeySize)
+	enc, err := protocol.DecodeB64(req.Enc, protocol.PublicKeySize)
 	if err != nil {
 		return nil, 0, fail(http.StatusBadRequest, "invalid_request", "invalid enc public key")
 	}
-	if _, err := protocol.DecodeB64(req.PairingHash, 32); err != nil {
+	if _, err := protocol.DecodeB64(req.PairingHash, sha256.Size); err != nil {
 		return nil, 0, fail(http.StatusBadRequest, "invalid_request", "invalid pairing_hash")
 	}
 	created, err := s.store.UpsertAccount(r.Context(), Account{ID: req.Account, SigPub: sig, EncPub: enc, PairingHash: req.PairingHash, Name: protocol.CleanLabel(req.Name)}, s.cfg.Now())
@@ -323,7 +325,7 @@ func (s *Server) registerAccount(_ http.ResponseWriter, r *http.Request, body []
 
 func (s *Server) status(_ http.ResponseWriter, r *http.Request, _ []byte) (any, int, error) {
 	ctx, account, now := r.Context(), accountFrom(r), s.cfg.Now()
-	s.store.TouchAccount(ctx, account, now)
+	s.logTouch(s.store.TouchAccount(ctx, account, now))
 	result := map[string]any{"account": account, "device": nil, "oldest_pending_at": nil}
 	if d, err := s.store.ActiveDevice(ctx, account); err == nil {
 		result["device"] = deviceJSON(d)
@@ -386,7 +388,7 @@ func (s *Server) listEnvelopes(_ http.ResponseWriter, r *http.Request, _ []byte)
 		}
 	}
 	ctx, account := r.Context(), accountFrom(r)
-	s.store.TouchAccount(ctx, account, s.cfg.Now())
+	s.logTouch(s.store.TouchAccount(ctx, account, s.cfg.Now()))
 	envelopes, more, err := s.store.Envelopes(ctx, account, after, limit, s.cfg.MaxFetchBytes)
 	if err != nil {
 		return nil, 0, err
@@ -423,7 +425,7 @@ func (s *Server) linkDevice(_ http.ResponseWriter, r *http.Request, body []byte)
 	if err := json.Unmarshal(body, &req); err != nil || !protocol.ValidAccountID(req.Account) {
 		return nil, 0, fail(http.StatusBadRequest, "invalid_request", "invalid JSON body or account")
 	}
-	secret, err := protocol.DecodeB64U(req.Secret, 32)
+	secret, err := protocol.DecodeB64U(req.Secret, protocol.SecretSize)
 	if err != nil {
 		return nil, 0, fail(http.StatusBadRequest, "invalid_request", "invalid pairing secret")
 	}
@@ -437,7 +439,8 @@ func (s *Server) linkDevice(_ http.ResponseWriter, r *http.Request, body []byte)
 	if subtle.ConstantTimeCompare([]byte(protocol.PairingHash(secret)), []byte(a.PairingHash)) != 1 {
 		return nil, 0, fail(http.StatusForbidden, "invalid_pairing_secret", "pairing code is not valid for this account")
 	}
-	sig, _ := protocol.DecodeB64(req.DeviceSig, 32)
+	// device_sig was decoded and checked by the authNewDevice middleware.
+	sig, _ := protocol.DecodeB64(req.DeviceSig, protocol.PublicKeySize)
 	d, err := s.store.LinkDevice(ctx, Device{
 		Account: req.Account, SigPub: sig, Name: protocol.CleanLabel(req.DeviceName),
 		Platform: protocol.CleanLabel(req.Platform), AppVersion: protocol.CleanLabel(req.AppVersion),
@@ -452,7 +455,7 @@ func (s *Server) linkDevice(_ http.ResponseWriter, r *http.Request, body []byte)
 
 func (s *Server) deviceSelf(_ http.ResponseWriter, r *http.Request, _ []byte) (any, int, error) {
 	ctx, d := r.Context(), deviceFrom(r)
-	s.store.TouchDevice(ctx, d.ID, s.cfg.Now())
+	s.logTouch(s.store.TouchDevice(ctx, d.ID, s.cfg.Now()))
 	a, err := s.store.Account(ctx, d.Account)
 	if err != nil {
 		return nil, 0, err
@@ -498,7 +501,7 @@ func (s *Server) uploadEnvelopes(_ http.ResponseWriter, r *http.Request, body []
 		}
 		accepted = append(accepted, map[string]any{"id": e.ID, "seq": seq})
 	}
-	s.store.TouchDevice(ctx, d.ID, now)
+	s.logTouch(s.store.TouchDevice(ctx, d.ID, now))
 	return map[string]any{"accepted": accepted}, http.StatusOK, nil
 }
 
@@ -511,6 +514,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeError renders an apiError as is. Any other error is an internal failure:
 // the client gets a generic 500 and the operator gets the cause in the log
 // (method and path only; never bodies, keys or query strings).
+// logTouch records a failed last-seen update without failing the request.
+func (s *Server) logTouch(err error) {
+	if err != nil {
+		s.cfg.Logger.Warn("last-seen update failed", "error", err)
+	}
+}
+
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var api *apiError
 	if !errors.As(err, &api) {

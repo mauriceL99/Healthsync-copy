@@ -153,8 +153,11 @@ enum PairingCode {
 /// Relay URL rule from docs/PROTOCOL.md §3: `https://…`, or plain `http://` only for
 /// `localhost`, loopback or private-network IP addresses (development).
 enum RelayURLValidator {
+    /// Same limit as `MaxRelayURLLength` in internal/protocol (Go).
+    static let maxLength = 512
+
     static func validate(_ raw: String) throws -> URL {
-        guard raw.utf8.count <= 512 else {
+        guard raw.utf8.count <= maxLength else {
             throw PairingCodeError.invalidRelayURL
         }
         guard let components = URLComponents(string: raw),

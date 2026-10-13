@@ -75,7 +75,7 @@ func (e Envelope) ValidateHeader() error {
 	if _, err := DecodeB64U(e.Kid, 12); err != nil {
 		return errors.New("invalid envelope kid")
 	}
-	if _, err := DecodeB64(e.Epk, 32); err != nil {
+	if _, err := DecodeB64(e.Epk, PublicKeySize); err != nil {
 		return errors.New("invalid ephemeral public key")
 	}
 	if _, err := DecodeB64(e.Nonce, chacha20poly1305.NonceSize); err != nil {
@@ -175,7 +175,7 @@ func Open(e Envelope, account string, priv *ecdh.PrivateKey) ([]byte, error) {
 	if e.Kid != KeyID(recipient) {
 		return nil, errors.New("envelope is not addressed to this encryption key")
 	}
-	epkBytes, _ := DecodeB64(e.Epk, 32)
+	epkBytes, _ := DecodeB64(e.Epk, PublicKeySize)
 	nonce, _ := DecodeB64(e.Nonce, chacha20poly1305.NonceSize)
 	ct, err := DecodeB64(e.Ct, -1)
 	if err != nil || len(ct) > MaxCiphertext || len(ct) < chacha20poly1305.Overhead {

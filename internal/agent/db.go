@@ -276,7 +276,8 @@ func (d *DB) Workouts(ctx context.Context, from, to string) ([]healthdata.Workou
 	return out, rows.Err()
 }
 
-// WorkoutDate returns the stored local date of a workout.
+// WorkoutDates maps workout IDs to their stored local start date, for workouts
+// starting in [from, to].
 func (d *DB) WorkoutDates(ctx context.Context, from, to string) (map[string]string, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT id, date FROM workouts WHERE date >= ? AND date <= ?`, from, to)
 	if err != nil {

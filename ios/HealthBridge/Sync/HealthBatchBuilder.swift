@@ -259,7 +259,7 @@ final class HealthBatchBuilder {
 
         if options.heartRateDetails {
             let points = try await tolerant("workout heart rate", []) {
-                try await health.heartRatePoints(from: workout.startDate, to: workout.endDate.addingTimeInterval(90))
+                try await health.heartRatePoints(from: workout.startDate, to: workout.endDate.addingTimeInterval(HeartRateAnalyzer.samplesAfterEnd))
             }
             if !points.isEmpty {
                 let maxReference = options.maxReferenceBPM ?? HeartRateAnalyzer.maxReference(age: nil, observedMax: nil)

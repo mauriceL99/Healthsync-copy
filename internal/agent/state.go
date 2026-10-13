@@ -58,6 +58,8 @@ func DefaultStateDir() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
+		// No home directory (some service accounts and containers): fall back to the
+		// working directory rather than failing; `status` prints the path in use.
 		return ".healthbridge"
 	}
 	return filepath.Join(home, ".healthbridge")
@@ -175,7 +177,7 @@ func (s *State) SaveIdentity(id *Identity) error {
 	return nil
 }
 
-// ArchiveIdentity moves keys, config and QR into backups/<timestamp>/.
+// ArchiveIdentity moves keys, config and QR into backups/<UTC timestamp>-<account>/.
 func (s *State) ArchiveIdentity(now time.Time) (string, error) {
 	dest := s.path("backups", now.UTC().Format("20060102T150405Z")+"-"+s.Config.Account)
 	if err := ensurePrivateDir(dest); err != nil {
@@ -236,7 +238,9 @@ func writePrivateAtomic(path string, data []byte) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// writeNewPrivate creates a new file (never overwriting) with mode 0600.
+// writeNewPrivate writes a file with mode 0600. Without overwrite it refuses an
+// existing file; with overwrite it replaces the content and also tightens the mode
+// of the existing file (OpenFile only applies the mode when it creates the file).
 func writeNewPrivate(path string, data []byte, overwrite bool) error {
 	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
 	if overwrite {
@@ -247,6 +251,10 @@ func writeNewPrivate(path string, data []byte, overwrite bool) error {
 		return fmt.Errorf("%s already exists; choose another path or pass --force", path)
 	}
 	if err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
 		return err
 	}
 	if _, err := f.Write(data); err != nil {

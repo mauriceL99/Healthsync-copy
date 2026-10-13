@@ -255,8 +255,15 @@ func TestMCPProtocol(t *testing.T) {
 	if v := responses[0]["result"].(map[string]any)["protocolVersion"]; v != "2025-03-26" {
 		t.Fatalf("version negotiation: %v", v)
 	}
-	summary := responses[2]["result"].(map[string]any)
-	if summary["isError"] != false || !strings.Contains(summary["content"].([]any)[0].(map[string]any)["text"].(string), "Health summary") {
+	text := func(r map[string]any) string {
+		return r["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+	}
+	if sync := responses[1]; sync["result"].(map[string]any)["isError"] != false ||
+		!strings.HasPrefix(text(sync), "Fetched 1 envelopes; 10 days") || !strings.Contains(text(sync), "(0 failed)") {
+		t.Fatalf("sync tool: %v", sync)
+	}
+	if summary := responses[2]; summary["result"].(map[string]any)["isError"] != false ||
+		!strings.Contains(text(summary), "Health summary") || !strings.Contains(text(summary), "Steps") {
 		t.Fatalf("summary tool: %v", summary)
 	}
 	if responses[3]["result"].(map[string]any)["isError"] != true {

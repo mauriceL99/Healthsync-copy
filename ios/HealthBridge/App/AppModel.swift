@@ -31,6 +31,9 @@ final class AppModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
+        // Also called in AppDelegate. SwiftUI may create this model before
+        // didFinishLaunching runs, and it must never load a pairing left by a previous
+        // install; the call is idempotent, so whichever runs first does the work.
         SettingsStore.prepareFirstLaunchIfNeeded()
         purchases = PurchaseManager()
         pairing = PairingStore.load()

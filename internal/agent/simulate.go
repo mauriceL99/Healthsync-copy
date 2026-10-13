@@ -29,8 +29,10 @@ type SimulateOptions struct {
 }
 
 // SimulateDevice acts like the iPhone app with synthetic data: it links a
-// throwaway device with the pairing code, encrypts a backfill for the agent
-// key and uploads it. It is meant for demos and end-to-end tests.
+// throwaway device with the pairing code, encrypts the history in chunks for
+// the agent key and uploads them. All chunks are sent as `backfill` except the
+// newest, which is sent as `sync`, so both envelope kinds are exercised. It is
+// meant for demos and end-to-end tests.
 func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 	p, err := protocol.DecodePairing(o.PairingCode)
 	if err != nil {
@@ -63,7 +65,10 @@ func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 		return err
 	}
 	dev := c.WithKey(protocol.DeviceKey(deviceID))
-	safety, _ := p.SafetyCode()
+	safety, err := p.SafetyCode()
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(env.Out, "Simulated device %s linked to %q (safety code %s).\n", deviceID, p.Name, safety)
 
 	if o.Days <= 0 {

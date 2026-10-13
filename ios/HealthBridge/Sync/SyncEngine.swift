@@ -212,6 +212,10 @@ actor SyncEngine {
         }
     }
 
+    /// Upper bound for the JSON around an envelope's ciphertext (id, account, kind, epk,
+    /// nonce, kid, timestamps: about 350 bytes), used to keep uploads under the relay limit.
+    static let envelopeOverheadBytes = 512
+
     /// Skipped reads are not retried automatically: they are almost always persistent
     /// (a type this iPhone cannot query), and retrying would turn every sync into a full
     /// history import. The user can re-send the history once the cause is fixed.
@@ -298,7 +302,7 @@ actor SyncEngine {
                 kind: plan.kind,
                 compression: .deflate
             )
-            let size = envelope.ct.utf8.count + 512
+            let size = envelope.ct.utf8.count + Self.envelopeOverheadBytes
             if !pending.isEmpty
                 && (pending.count >= HB1.maxEnvelopesPerRequest || pendingBytes + size > HB1.maxUploadBodyBytes) {
                 try await flush()

@@ -57,6 +57,14 @@ func DecodePairing(code string) (Pairing, error) {
 }
 
 // Validate checks every field of the pairing payload.
+// Byte lengths fixed by the protocol (docs/PROTOCOL.md).
+const (
+	// PublicKeySize is the length of Ed25519 and X25519 public keys.
+	PublicKeySize = 32
+	// SecretSize is the length of the pairing secret.
+	SecretSize = 32
+)
+
 func (p Pairing) Validate() error {
 	if p.V != Version {
 		return errors.New("unsupported pairing version")
@@ -67,16 +75,16 @@ func (p Pairing) Validate() error {
 	if !ValidAccountID(p.Account) {
 		return errors.New("invalid account ID")
 	}
-	if _, err := DecodeB64(p.Sig, 32); err != nil {
+	if _, err := DecodeB64(p.Sig, PublicKeySize); err != nil {
 		return errors.New("invalid signing public key")
 	}
-	if _, err := DecodeB64(p.Enc, 32); err != nil {
+	if _, err := DecodeB64(p.Enc, PublicKeySize); err != nil {
 		return errors.New("invalid encryption public key")
 	}
-	if _, err := DecodeB64U(p.Secret, 32); err != nil {
+	if _, err := DecodeB64U(p.Secret, SecretSize); err != nil {
 		return errors.New("invalid pairing secret")
 	}
-	if len([]rune(p.Name)) > 64 {
+	if len([]rune(p.Name)) > MaxLabelLength {
 		return errors.New("agent name too long")
 	}
 	return nil
@@ -84,11 +92,11 @@ func (p Pairing) Validate() error {
 
 // SafetyCode returns the human-comparable code for this pairing.
 func (p Pairing) SafetyCode() (string, error) {
-	sig, err := DecodeB64(p.Sig, 32)
+	sig, err := DecodeB64(p.Sig, PublicKeySize)
 	if err != nil {
 		return "", err
 	}
-	enc, err := DecodeB64(p.Enc, 32)
+	enc, err := DecodeB64(p.Enc, PublicKeySize)
 	if err != nil {
 		return "", err
 	}
@@ -120,10 +128,14 @@ func KeyID(encPub []byte) string {
 	return B64U(sum[:12])
 }
 
+// MaxRelayURLLength bounds the relay URL in a pairing code, so the QR code stays
+// scannable. The iOS app enforces the same limit.
+const MaxRelayURLLength = 512
+
 // ValidateRelayURL accepts https URLs, and plain http only for loopback or
 // private-network hosts used during development.
 func ValidateRelayURL(raw string) error {
-	if len(raw) > 512 {
+	if len(raw) > MaxRelayURLLength {
 		return errors.New("relay URL too long")
 	}
 	u, err := url.Parse(raw)

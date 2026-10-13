@@ -155,9 +155,11 @@ func (s *Store) Account(ctx context.Context, id string) (Account, error) {
 	return a, err
 }
 
-// TouchAccount updates last_seen_at.
-func (s *Store) TouchAccount(ctx context.Context, id string, now time.Time) {
-	_, _ = s.db.ExecContext(ctx, `UPDATE accounts SET last_seen_at = ? WHERE account = ?`, now.Unix(), id)
+// TouchAccount updates last_seen_at. It is informational only (shown in status
+// responses), so a failed update must not fail the request; it is logged instead.
+func (s *Store) TouchAccount(ctx context.Context, id string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE accounts SET last_seen_at = ? WHERE account = ?`, now.Unix(), id)
+	return err
 }
 
 // DeleteAccount removes an account with its devices and envelopes.
@@ -220,9 +222,11 @@ func (s *Store) LinkDevice(ctx context.Context, d Device, now time.Time) (Device
 	return d, tx.Commit()
 }
 
-// TouchDevice updates last_seen_at.
-func (s *Store) TouchDevice(ctx context.Context, id string, now time.Time) {
-	_, _ = s.db.ExecContext(ctx, `UPDATE devices SET last_seen_at = ? WHERE device_id = ?`, now.Unix(), id)
+// TouchDevice updates last_seen_at. It is informational only (shown in status
+// responses), so a failed update must not fail the request; it is logged instead.
+func (s *Store) TouchDevice(ctx context.Context, id string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE devices SET last_seen_at = ? WHERE device_id = ?`, now.Unix(), id)
+	return err
 }
 
 // UnlinkDevice marks a device as unlinked.

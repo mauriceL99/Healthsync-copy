@@ -3,14 +3,15 @@ import SwiftUI
 // MARK: - Buttons
 
 extension View {
-    /// Full-width prominent button used for the main action of a screen.
+    /// Prominent button for the main action of a screen. It sizes to its label; give the
+    /// label `.frame(maxWidth: .infinity)` for a full-width button.
     func primaryActionStyle() -> some View {
         buttonStyle(.borderedProminent)
             .controlSize(.large)
             .buttonBorderShape(.roundedRectangle(radius: 14))
     }
 
-    /// Full-width secondary button.
+    /// Secondary button; sizes to its label like `primaryActionStyle()`.
     func secondaryActionStyle() -> some View {
         buttonStyle(.bordered)
             .controlSize(.large)

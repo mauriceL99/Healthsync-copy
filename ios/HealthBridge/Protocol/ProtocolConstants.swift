@@ -72,8 +72,9 @@ enum HB1 {
 
     /// Removes control characters and trims a human label (agent or device name).
     static func cleanLabel(_ value: String, maxLength: Int = 64) -> String {
+        // Same rule as the Go CleanLabel: drop Unicode category Cc (C0, DEL and C1).
         let scalars = value.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.filter { scalar in
-            !(scalar.value < 0x20 || scalar.value == 0x7f)
+            scalar.properties.generalCategory != .control
         }
         var cleaned = String(String.UnicodeScalarView(scalars))
         if cleaned.unicodeScalars.count > maxLength {

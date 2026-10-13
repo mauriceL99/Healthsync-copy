@@ -147,6 +147,8 @@ enum MetricUnit {
     /// The HealthKit unit used to read the raw value.
     var hkUnit: HKUnit {
         switch self {
+        // Stand hours come from HKActivitySummary.appleStandHours, a count quantity,
+        // not a duration.
         case .count, .bmi, .hour:
             return .count()
         case .meter:
