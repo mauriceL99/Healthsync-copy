@@ -212,8 +212,9 @@ func chart(title, unit, kind string, dates []string, series []chartSeries) templ
 	step := int(math.Ceil(n / 8))
 	last := len(dates) - 1
 	for i, d := range dates {
-		// Label every step-th day plus the last one unless it would collide.
-		if i%step == 0 && (i == last || last-i >= step/2+1) || i == last {
+		// Label every step-th day and always the last day; a step-th label closer
+		// than half a step to the last one is skipped so the two do not overlap.
+		if i == last || (i%step == 0 && last-i > step/2) {
 			fmt.Fprintf(&b, `<text class="axis" x="%.1f" y="%.1f" text-anchor="middle">%s</text>`, x(i), height-6, d[5:])
 		}
 	}

@@ -342,7 +342,11 @@ func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 		}
 		sort.SliceStable(hr.Samples, func(i, j int) bool { return hr.Samples[i].T < hr.Samples[j].T })
 	}
-	if hr.AvgBPM == nil && hr.MinBPM == nil && hr.MaxBPM == nil && len(hr.Zones) == 0 && len(hr.Samples) == 0 {
+	if hr.AvgBPM == nil && hr.MinBPM == nil && hr.MaxBPM == nil && hr.Recovery1MinBPM == nil && len(hr.Zones) == 0 && len(hr.Samples) == 0 {
+		if hr.MaxReferenceBPM != nil {
+			// A zone reference without any measurement describes nothing.
+			rep.DroppedValues++
+		}
 		return nil
 	}
 	return hr

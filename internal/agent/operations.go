@@ -294,83 +294,21 @@ func Fetch(ctx context.Context, env Env, s *State, o FetchOptions) (res FetchRes
 		return res, err
 	}
 	defer db.Close()
-	days := map[string]bool{}
-	// process stores one envelope. Envelopes that cannot be opened or parsed go
-	// to the local quarantine: the relay copy is acked like any other, so a bad
-	// upload cannot block the mailbox, but the ciphertext is kept and retried on
-	// every fetch (an updated CLI may read what this one cannot).
-	process := func(e protocol.StoredEnvelope) (failure error, err error) {
-		r := EnvelopeResult{Seq: e.Seq, ID: e.ID, Kind: e.Kind, Created: e.CreatedAt, Status: "ok"}
-		batch, rep, perr := openEnvelope(e.Envelope, s.Config.Account, id.Enc)
-		if perr != nil {
-			r.Status, r.ErrorMsg = "error", perr.Error()
-			if err := db.Quarantine(ctx, e, perr.Error(), now); err != nil {
-				return perr, err
-			}
-			return perr, db.LogFailure(ctx, r, now)
-		}
-		r.Report = rep
-		repaired, err := db.Apply(ctx, batch, r, now)
-		if err != nil {
-			return nil, err
-		}
-		res.RepairedDays += repaired
-		for d := range batch.Days {
-			days[d] = true
-		}
-		res.Workouts += len(batch.Workouts)
-		res.Dropped += rep.DroppedDays + rep.DroppedValues + rep.DroppedWorkouts
-		return nil, nil
+	f := &fetchRun{ctx: ctx, env: env, s: s, key: id.Enc, db: db, now: now, days: map[string]bool{}}
+	if err := f.retryQuarantine(); err != nil {
+		return f.res, err
 	}
-	quarantined, err := db.Quarantined(ctx)
+	if err := f.drainRelay(c); err != nil {
+		return f.res, err
+	}
+	res = f.res
+	cov, err := db.Coverage(ctx)
 	if err != nil {
 		return res, err
 	}
-	for _, q := range quarantined {
-		failure, err := process(q.Envelope)
-		if err != nil {
-			return res, err
-		}
-		if failure == nil {
-			if err := db.Release(ctx, q.Envelope.Seq); err != nil {
-				return res, err
-			}
-			res.Recovered++
-		}
-	}
-	cursor := s.Config.LastSeq
-	for {
-		envelopes, more, err := c.Envelopes(ctx, cursor, 50)
-		if err != nil {
-			return res, fmt.Errorf("fetch envelopes: %w", err)
-		}
-		for _, e := range envelopes {
-			failure, err := process(e)
-			if err != nil {
-				return res, err
-			}
-			if failure != nil {
-				res.Failed++
-				fmt.Fprintf(env.Err, "warning: envelope %d could not be read (%v); kept in local quarantine and retried on the next fetch\n", e.Seq, failure)
-			}
-			res.Envelopes++
-			cursor = e.Seq
-			s.Config.LastSeq = cursor
-		}
-		if err := s.Save(); err != nil {
-			return res, err
-		}
-		if !more || len(envelopes) == 0 {
-			break
-		}
-	}
-	if cov, err := db.Coverage(ctx); err == nil {
-		res.Quarantined = cov.Quarantined
-	} else {
-		return res, err
-	}
-	res.LastSeq, res.Days = cursor, len(days)
-	for d := range days {
+	res.Quarantined = cov.Quarantined
+	res.Days = len(f.days)
+	for d := range f.days {
 		if res.FirstDate == "" || d < res.FirstDate {
 			res.FirstDate = d
 		}
@@ -378,12 +316,107 @@ func Fetch(ctx context.Context, env Env, s *State, o FetchOptions) (res FetchRes
 			res.LastDate = d
 		}
 	}
-	if !o.KeepOnRelay && cursor > 0 && res.Envelopes > 0 {
-		if res.Acked, err = c.Ack(ctx, cursor); err != nil {
+	if !o.KeepOnRelay && res.LastSeq > 0 && res.Envelopes > 0 {
+		if res.Acked, err = c.Ack(ctx, res.LastSeq); err != nil {
 			return res, fmt.Errorf("data was stored, but deleting it from the relay failed: %w", err)
 		}
 	}
 	return res, nil
+}
+
+// fetchRun holds the state of one Fetch.
+type fetchRun struct {
+	ctx  context.Context
+	env  Env
+	s    *State
+	key  *ecdh.PrivateKey
+	db   *DB
+	now  time.Time
+	res  FetchResult
+	days map[string]bool
+}
+
+// process stores one envelope and returns why it could not be read, if so.
+// Envelopes that cannot be opened or parsed go to the local quarantine: the
+// relay copy is acked like any other, so a bad upload cannot block the mailbox,
+// but the ciphertext is kept and retried on every fetch (an updated CLI may read
+// what this one cannot).
+func (f *fetchRun) process(e protocol.StoredEnvelope) (failure error, err error) {
+	r := EnvelopeResult{Seq: e.Seq, ID: e.ID, Kind: e.Kind, Created: e.CreatedAt, Status: "ok"}
+	batch, rep, perr := openEnvelope(e.Envelope, f.s.Config.Account, f.key)
+	if perr != nil {
+		r.Status, r.ErrorMsg = "error", perr.Error()
+		if err := f.db.Quarantine(f.ctx, e, perr.Error(), f.now); err != nil {
+			return perr, err
+		}
+		return perr, f.db.LogFailure(f.ctx, r, f.now)
+	}
+	r.Report = rep
+	repaired, err := f.db.Apply(f.ctx, batch, r, f.now)
+	if err != nil {
+		return nil, err
+	}
+	f.res.RepairedDays += repaired
+	for d := range batch.Days {
+		f.days[d] = true
+	}
+	f.res.Workouts += len(batch.Workouts)
+	f.res.Dropped += rep.DroppedDays + rep.DroppedValues + rep.DroppedWorkouts
+	return nil, nil
+}
+
+// retryQuarantine processes the locally kept envelopes again and releases the
+// ones that can be read now.
+func (f *fetchRun) retryQuarantine() error {
+	quarantined, err := f.db.Quarantined(f.ctx)
+	if err != nil {
+		return err
+	}
+	for _, q := range quarantined {
+		failure, err := f.process(q.Envelope)
+		if err != nil {
+			return err
+		}
+		if failure == nil {
+			if err := f.db.Release(f.ctx, q.Envelope.Seq); err != nil {
+				return err
+			}
+			f.res.Recovered++
+		}
+	}
+	return nil
+}
+
+// drainRelay processes every new envelope on the relay, page by page, and
+// saves the position after each page.
+func (f *fetchRun) drainRelay(c *client.Client) error {
+	cursor := f.s.Config.LastSeq
+	defer func() { f.res.LastSeq = cursor }()
+	for {
+		envelopes, more, err := c.Envelopes(f.ctx, cursor, 50)
+		if err != nil {
+			return fmt.Errorf("fetch envelopes: %w", err)
+		}
+		for _, e := range envelopes {
+			failure, err := f.process(e)
+			if err != nil {
+				return err
+			}
+			if failure != nil {
+				f.res.Failed++
+				fmt.Fprintf(f.env.Err, "warning: envelope %d could not be read (%v); kept in local quarantine and retried on the next fetch\n", e.Seq, failure)
+			}
+			f.res.Envelopes++
+			cursor = e.Seq
+			f.s.Config.LastSeq = cursor
+		}
+		if err := f.s.Save(); err != nil {
+			return err
+		}
+		if !more || len(envelopes) == 0 {
+			return nil
+		}
+	}
 }
 
 func openEnvelope(e protocol.Envelope, account string, key *ecdh.PrivateKey) (healthdata.Batch, healthdata.Report, error) {
