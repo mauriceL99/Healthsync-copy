@@ -273,3 +273,41 @@ func TestMCPProtocol(t *testing.T) {
 		t.Fatalf("error codes: %v %v", responses[4], responses[5])
 	}
 }
+
+// After a relay reset or onboard --rotate, sequence numbers start over while the
+// local database stays: a new unreadable envelope reusing a quarantined seq must
+// not replace or drop the one already kept.
+func TestQuarantineKeepsEnvelopesWithReusedSeq(t *testing.T) {
+	ctx := context.Background()
+	db, err := OpenDB(filepath.Join(t.TempDir(), "health.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	key, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := protocol.NewAccountID()
+	first, _ := protocol.Seal([]byte(`{}`), key.PublicKey(), protocol.SealParams{Account: account})
+	second, _ := protocol.Seal([]byte(`{}`), key.PublicKey(), protocol.SealParams{Account: account})
+	now := time.Now()
+	for _, e := range []protocol.Envelope{first, second, first} {
+		if err := db.Quarantine(ctx, protocol.StoredEnvelope{Envelope: e, Seq: 7}, "unsupported", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q, err := db.Quarantined(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(q) != 2 || q[0].Envelope.ID != first.ID || q[0].Attempts != 2 || q[1].Envelope.ID != second.ID {
+		t.Fatalf("quarantine: %+v", q)
+	}
+	if err := db.Release(ctx, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if q, _ := db.Quarantined(ctx); len(q) != 1 || q[0].Envelope.ID != second.ID {
+		t.Fatalf("after release: %+v", q)
+	}
+}

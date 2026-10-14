@@ -378,7 +378,7 @@ func (f *fetchRun) retryQuarantine() error {
 			return err
 		}
 		if failure == nil {
-			if err := f.db.Release(f.ctx, q.Envelope.Seq); err != nil {
+			if err := f.db.Release(f.ctx, q.Envelope.ID); err != nil {
 				return err
 			}
 			f.res.Recovered++

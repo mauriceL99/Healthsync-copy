@@ -219,7 +219,8 @@ user chose `--keep-on-relay`.
 
 An envelope the agent cannot open or validate (for example, one written by a newer
 app) is acked like the others, so it cannot block the mailbox. The agent keeps its
-ciphertext in a local quarantine and retries it on every fetch.
+ciphertext in a local quarantine, keyed by envelope `id` (sequence numbers are not
+stable across relay resets), and retries it on every fetch.
 
 If `POST /v1/accounts` reports `created: true` for an agent that already has a fetch
 position, the relay has lost the account (for example, after a database reset). Its

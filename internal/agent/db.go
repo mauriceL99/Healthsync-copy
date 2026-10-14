@@ -42,8 +42,11 @@ CREATE TABLE IF NOT EXISTS envelopes (
   dropped      INTEGER NOT NULL DEFAULT 0,
   error        TEXT NOT NULL DEFAULT ''
 );
+-- Keyed by envelope ID: relay sequence numbers start over after a relay reset
+-- or onboard --rotate, while this database is kept.
 CREATE TABLE IF NOT EXISTS quarantine (
-  seq             INTEGER PRIMARY KEY,
+  id              TEXT PRIMARY KEY,
+  seq             INTEGER NOT NULL,
   envelope        TEXT NOT NULL,
   error           TEXT NOT NULL,
   first_failed_at TEXT NOT NULL,
@@ -183,15 +186,16 @@ func (d *DB) Quarantine(ctx context.Context, e protocol.StoredEnvelope, reason s
 		return err
 	}
 	stamp := protocol.FormatTime(now)
-	_, err = d.db.ExecContext(ctx, `INSERT INTO quarantine(seq, envelope, error, first_failed_at, last_attempt_at, attempts) VALUES(?,?,?,?,?,1)
-		ON CONFLICT(seq) DO UPDATE SET error = excluded.error, last_attempt_at = excluded.last_attempt_at, attempts = attempts + 1`,
-		e.Seq, string(data), reason, stamp, stamp)
+	_, err = d.db.ExecContext(ctx, `INSERT INTO quarantine(id, seq, envelope, error, first_failed_at, last_attempt_at, attempts) VALUES(?,?,?,?,?,?,1)
+		ON CONFLICT(id) DO UPDATE SET seq = excluded.seq, envelope = excluded.envelope, error = excluded.error,
+		last_attempt_at = excluded.last_attempt_at, attempts = attempts + 1`,
+		e.ID, e.Seq, string(data), reason, stamp, stamp)
 	return err
 }
 
-// Quarantined lists quarantined envelopes in sequence order.
+// Quarantined lists quarantined envelopes, oldest failure first.
 func (d *DB) Quarantined(ctx context.Context) ([]QuarantinedEnvelope, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT envelope, error, attempts FROM quarantine ORDER BY seq`)
+	rows, err := d.db.QueryContext(ctx, `SELECT envelope, error, attempts FROM quarantine ORDER BY first_failed_at, rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -211,9 +215,9 @@ func (d *DB) Quarantined(ctx context.Context) ([]QuarantinedEnvelope, error) {
 	return out, rows.Err()
 }
 
-// Release removes an envelope from quarantine after it was processed.
-func (d *DB) Release(ctx context.Context, seq int64) error {
-	_, err := d.db.ExecContext(ctx, `DELETE FROM quarantine WHERE seq = ?`, seq)
+// Release removes an envelope (by envelope ID) from quarantine after it was processed.
+func (d *DB) Release(ctx context.Context, id string) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM quarantine WHERE id = ?`, id)
 	return err
 }
 
