@@ -1,0 +1,7 @@
+#!/bin/bash
+# Runs the healthbridge command inside the server's agent container, e.g.
+#   ./deploy/hb status          ./deploy/hb pairing
+#   ./deploy/hb connector-url   ./deploy/hb summary --period week
+set -euo pipefail
+cd "$(dirname "$0")"
+exec docker compose -f docker-compose.yml exec agent /usr/local/bin/healthbridge "$@"

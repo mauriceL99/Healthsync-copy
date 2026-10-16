@@ -14,3 +14,6 @@ ios/DerivedData/
 
 # Personal signing values written by ios/setup.sh
 ios/Configuration/Local.xcconfig
+
+# Server settings written by deploy/setup.sh (contains the relay token)
+deploy/.env

@@ -1,16 +1,42 @@
-# Relay with automatic HTTPS via Caddy.
-#   HB_DOMAIN=relay.example.com docker compose -f deploy/docker-compose.yml up -d
+# HealthBridge on one small Linux server: relay + agent + automatic HTTPS.
+# Easiest: run ./deploy/setup.sh (docs/SERVER_START.md); it writes deploy/.env
+# and starts everything. Relay only (agent on your own computer):
+#   HB_DOMAIN=relay.example.com docker compose -f deploy/docker-compose.yml up -d relay caddy
+name: healthbridge
+
 services:
   relay:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    image: healthbridge:local
     restart: unless-stopped
     environment:
       HB_RELAY_TRUST_PROXY: "1"
       HB_RELAY_REGISTRATION_TOKEN: ${HB_RELAY_REGISTRATION_TOKEN:-}
     volumes:
       - relay-data:/data
+
+  agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: healthbridge:local
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/healthbridge"]
+    command: ["serve", "--addr", ":8788"]
+    environment:
+      HEALTHBRIDGE_HOME: /data
+      HEALTHBRIDGE_PUBLIC_URL: https://${HB_DOMAIN:?set HB_DOMAIN to the server name}
+    volumes:
+      - agent-data:/data
+    # The agent talks to the relay through the public HTTPS name (the same
+    # address the iPhone uses); this resolves it to this host directly.
+    extra_hosts:
+      - "${HB_DOMAIN}:host-gateway"
+    depends_on:
+      - caddy
+
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -18,12 +44,14 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      HB_DOMAIN: ${HB_DOMAIN:?set HB_DOMAIN to the relay host name}
+      HB_DOMAIN: ${HB_DOMAIN:?set HB_DOMAIN to the server name}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
     depends_on:
       - relay
+
 volumes:
   relay-data:
+  agent-data:
   caddy-data:

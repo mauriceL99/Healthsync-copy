@@ -225,7 +225,7 @@ func showPairing(env Env, s *State, terminal bool) error {
   QR image:     %s
 
 Pair your iPhone:
-  1. Open HealthBridge on the iPhone and choose "Pair with agent".
+  1. Open HealthBridge on the iPhone and tap "Get started".
   2. Scan the QR code (or paste the pairing code below).
   3. Check that the app shows the same safety code: %s
   4. Choose metrics, allow Apple Health access and run the first sync.

@@ -1,7 +1,17 @@
+# Automatic HTTPS for {$HB_DOMAIN}. The secret connector path goes to the agent,
+# everything else to the relay. Caddy keeps no access log by default, so the
+# secret never lands in a log file.
 {$HB_DOMAIN} {
 	encode gzip
-	request_body {
-		max_size 26MB
+
+	handle /mcp/* {
+		reverse_proxy agent:8788
 	}
-	reverse_proxy relay:8787
+
+	handle {
+		request_body {
+			max_size 26MB
+		}
+		reverse_proxy relay:8787
+	}
 }

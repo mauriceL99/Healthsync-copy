@@ -42,7 +42,7 @@ dist: ## Cross-compile release archives into ./dist
 	done
 	cd dist && sha256sum *.tar.gz > SHA256SUMS
 
-relay-image: ## Build the relay container image
+relay-image: ## Build the container image (relay + agent)
 	docker build -f deploy/Dockerfile -t healthbridge-relay:$(VERSION) .
 
 e2e: build ## Local end-to-end demo: relay + simulated iPhone + fetch + summary
