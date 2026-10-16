@@ -12,7 +12,7 @@ import "time"
 
 // AnalysisVersion changes whenever Parse derives different values from the
 // same file. Stored activities with an older version are parsed again.
-const AnalysisVersion = 1
+const AnalysisVersion = 2
 
 // Activity kinds.
 const (
@@ -243,6 +243,9 @@ type Stream struct {
 	Power    []float64 // W
 	Cadence  []float64 // steps/min (running) or rpm (cycling)
 	Altitude []float64 // m
+	// Pauses are the stretches [from, to] (seconds since start) with the
+	// timer stopped.
+	Pauses [][2]float64
 }
 
 // Len returns the number of samples.

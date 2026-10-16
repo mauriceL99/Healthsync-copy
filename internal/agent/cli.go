@@ -50,7 +50,7 @@ Agents
   serve          Run as a service: fetch regularly and answer MCP over HTTP
                  (for ChatGPT and Claude on the web/apps; see docs/SERVER_START.md)
   connector-url  Print the secret connector URL that serve answers on (--upload: the
-                 page for uploading Garmin files)
+                 page for uploading Garmin files, with its own secret)
 
 Other
   self-test      Check the executable offline
@@ -705,10 +705,10 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 		return Serve(ctx, env, stateDir, o)
 
 	case "connector-url":
-		fs := newFlags(env, cmd, "connector-url [--public-url https://your-server.example] [--rotate]", &stateDir)
+		fs := newFlags(env, cmd, "connector-url [--public-url https://your-server.example] [--upload] [--rotate]", &stateDir)
 		publicURL := fs.String("public-url", os.Getenv("HEALTHBRIDGE_PUBLIC_URL"), "public HTTPS address of this server (or HEALTHBRIDGE_PUBLIC_URL)")
-		rotate := fs.Bool("rotate", false, "create a new secret; the old URL stops working immediately")
-		upload := fs.Bool("upload", false, "print the address of the upload page for Garmin files instead")
+		rotate := fs.Bool("rotate", false, "create a new secret for this address; the old one stops working immediately")
+		upload := fs.Bool("upload", false, "the address of the upload page for Garmin files (its own secret) instead")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
@@ -722,20 +722,21 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return err
 		}
 		defer s.Close()
-		token, err := s.MCPToken(*rotate)
+		secret, address, renewed := s.MCPToken, ConnectorURL, "New secret URL created. Replace the old one in ChatGPT / Claude; it no longer works."
+		if *upload {
+			secret, address, renewed = s.UploadToken, UploadURL, "New upload address created; the old one (and its bookmarks) no longer works."
+		}
+		token, err := secret(*rotate)
 		if err != nil {
 			return err
 		}
-		u, err := ConnectorURL(*publicURL, token)
-		if *upload {
-			u, err = UploadURL(*publicURL, token)
-		}
+		u, err := address(*publicURL, token)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintln(env.Out, u)
 		if *rotate {
-			fmt.Fprintln(env.Err, "New secret URL created. Replace the old one in ChatGPT / Claude; it no longer works.")
+			fmt.Fprintln(env.Err, renewed)
 		}
 		return nil
 

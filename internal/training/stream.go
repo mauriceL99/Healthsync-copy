@@ -4,9 +4,14 @@ import (
 	"math"
 )
 
-// maxGap is the longest gap between samples (s) that still counts as one
-// continuous recording; longer gaps are pauses.
-const maxGap = 5.0
+// maxGap is the longest gap between samples (s) bridged by holding the last
+// value. Garmin's "smart" recording writes a sample only every few seconds;
+// real pauses come from the timer events (Stream.Pauses).
+const maxGap = 30.0
+
+// maxRunSpeed (m/s) is faster than any human runs; a larger distance step
+// between two samples is a GPS jump.
+const maxRunSpeed = 12.0
 
 // minDecouplingS is the shortest steady recording decoupling is computed for.
 const minDecouplingS = 20 * 60
@@ -47,8 +52,8 @@ func analyze(a *Activity) {
 	if s == nil || s.Len() < 2 {
 		return
 	}
-	hr := grid(s.T, s.HR)
-	power := grid(s.T, s.Power)
+	hr := grid(s, s.HR)
+	power := grid(s, s.Power)
 	hasPower := validCount(power) > 0
 
 	if a.Kind == KindRun {
@@ -81,7 +86,7 @@ func analyze(a *Activity) {
 	}
 	switch a.Kind {
 	case KindRun:
-		a.Decoupling = decoupling(grid(s.T, s.Speed), hr, "pace", 0.5)
+		a.Decoupling = decoupling(grid(s, s.Speed), hr, "pace", 0.5)
 	case KindBike:
 		if hasPower {
 			a.Decoupling = decoupling(power, hr, "power", math.Inf(-1))
@@ -92,22 +97,27 @@ func analyze(a *Activity) {
 	}
 }
 
-// grid resamples a channel to one value per second from 0 to the last
-// sample, holding each value until the next sample. Seconds more than maxGap
-// after the previous sample are NaN (paused).
-func grid(t, v []float64) []float64 {
+// grid resamples a channel of s to one value per second from 0 to the last
+// sample, holding each value until the next sample. Seconds in a pause, or
+// more than maxGap after the previous sample, are NaN.
+func grid(s *Stream, v []float64) []float64 {
+	t := s.T
 	n := int(t[len(t)-1]) + 1
 	if n <= 0 {
 		return nil
 	}
 	out := make([]float64, n)
-	j := 0
+	j, p := 0, 0
 	for sec := range n {
 		x := float64(sec)
 		for j+1 < len(t) && t[j+1] <= x {
 			j++
 		}
-		if t[j] > x || x-t[j] > maxGap {
+		for p < len(s.Pauses) && s.Pauses[p][1] <= x {
+			p++
+		}
+		paused := p < len(s.Pauses) && s.Pauses[p][0] <= x
+		if paused || t[j] > x || x-t[j] > maxGap {
 			out[sec] = math.NaN()
 			continue
 		}
@@ -187,12 +197,7 @@ func powerBests(power, hr []float64) []Best {
 // distanceBests finds the fastest time for each standard distance, with the
 // start interpolated between samples.
 func distanceBests(s *Stream) []Best {
-	var t, d, hr []float64
-	for i := range s.T {
-		if !math.IsNaN(s.Distance[i]) && (len(d) == 0 || s.Distance[i] >= d[len(d)-1]) {
-			t, d, hr = append(t, s.T[i]), append(d, s.Distance[i]), append(hr, s.HR[i])
-		}
-	}
+	t, d, hr := runDistance(s)
 	if len(d) < 2 {
 		return nil
 	}
@@ -215,7 +220,7 @@ func distanceBests(s *Stream) []Best {
 			if d[i+1] > d[i] {
 				start += (t[i+1] - t[i]) * (target - d[i]) / (d[i+1] - d[i])
 			}
-			if el := t[j] - start; el > 0 && el < best {
+			if el := t[j] - start; el > 0 && el < best && e.meters/el <= maxRunSpeed {
 				best, bestStart, bestEnd = el, start, j
 			}
 		}
@@ -237,6 +242,36 @@ func distanceBests(s *Stream) []Best {
 		out = append(out, b)
 	}
 	return out
+}
+
+// runDistance returns the samples with a distance, with GPS jumps (steps
+// faster than maxRunSpeed) replaced by the recorded speed, so a jump after a
+// tunnel cannot produce an impossible best effort.
+func runDistance(s *Stream) (t, d, hr []float64) {
+	removed := 0.0
+	for i := range s.T {
+		dist := s.Distance[i]
+		if math.IsNaN(dist) {
+			continue
+		}
+		dist -= removed
+		if n := len(d); n > 0 {
+			step, dt := dist-d[n-1], s.T[i]-t[n-1]
+			if step < 0 {
+				continue
+			}
+			if step > maxRunSpeed*dt {
+				keep := 0.0
+				if sp := s.Speed[i]; !math.IsNaN(sp) && sp <= maxRunSpeed {
+					keep = sp * dt
+				}
+				removed += step - keep
+				dist = d[n-1] + keep
+			}
+		}
+		t, d, hr = append(t, s.T[i]), append(d, dist), append(hr, s.HR[i])
+	}
+	return t, d, hr
 }
 
 // normalizedPower is the fourth-power mean of 30-second rolling averages.

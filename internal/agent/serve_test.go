@@ -42,7 +42,7 @@ func TestMCPOverHTTP(t *testing.T) {
 	token := strings.TrimPrefix(strings.TrimSpace(urlOut), "http://localhost:1/mcp/")
 
 	m := &MCP{Env: Env{Out: io.Discard, Err: io.Discard}, StateDir: dir}
-	srv := httptest.NewServer(m.HTTPHandler(func() (string, error) { return readMCPToken(dir) }))
+	srv := httptest.NewServer(m.HTTPHandler(func() (string, error) { return readToken(dir, mcpTokenFile) }, func() (string, error) { return readToken(dir, uploadTokenFile) }))
 	defer srv.Close()
 	endpoint := srv.URL + "/mcp/" + token
 

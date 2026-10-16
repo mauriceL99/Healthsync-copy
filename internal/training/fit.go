@@ -31,27 +31,51 @@ const maxUTCOffset = 14 * time.Hour
 // analyses allocate years of samples.
 const maxStreamS = 7 * 24 * 3600
 
+// MaxRecords bounds the per-second samples kept from one file (about 41
+// hours at one per second). Decoded messages take far more memory than the
+// file, so this keeps a crafted or huge file from exhausting a small server;
+// the session summary still covers the whole activity.
+const MaxRecords = 150_000
+
 // Parse decodes a FIT activity file and runs all per-activity analyses.
 func Parse(data []byte) (*Activity, error) {
-	mesgs, warning, err := decode(data)
-	if errors.Is(err, decoder.ErrCRCChecksumMismatch) {
-		// Files copied from a watch are occasionally cut short or damaged;
-		// what decodes is still worth keeping, with a note.
-		mesgs, _, err = decode(data, decoder.WithIgnoreChecksum())
-		warning = "the file's checksum does not match; it may be damaged or incomplete"
-	}
+	c, err := decode(data)
+	var warnings []string
 	if err != nil {
-		return nil, err
+		switch {
+		case len(c.act.Sessions) > 0:
+			// Files copied from a watch are occasionally cut short or
+			// damaged; with the summary intact the readable part is kept.
+			warnings = append(warnings, "the file is damaged or incomplete (checksum or end of file); the readable part was analysed")
+		case c.mesgs == 0 && errors.Is(err, decoder.ErrCRCChecksumMismatch):
+			// A damaged file header stops decoding before any message.
+			if c, err = decode(data, decoder.WithIgnoreChecksum()); err != nil && len(c.act.Sessions) == 0 {
+				return nil, fmt.Errorf("decode FIT: %w", err)
+			}
+			warnings = append(warnings, "the file's checksum does not match; it may be damaged")
+		case c.mesgs == 0:
+			return nil, fmt.Errorf("not a FIT file: %w", err)
+		case c.act.FileId.Type != typedef.FileActivity && c.act.FileId.Type != typedef.FileInvalid:
+			return nil, ErrNotActivity
+		default:
+			return nil, fmt.Errorf("decode FIT: %w (the recording may be incomplete)", err)
+		}
 	}
-	f := filedef.NewActivity(mesgs...)
+	f := c.act
+	if c.mesgs == 0 {
+		return nil, errors.New("not a FIT file")
+	}
 	if f.FileId.Type != typedef.FileActivity {
 		return nil, ErrNotActivity
 	}
 	if len(f.Sessions) == 0 {
 		return nil, errors.New("activity file has no session summary; the recording may be incomplete")
 	}
+	if c.dropped > 0 {
+		warnings = append(warnings, fmt.Sprintf("only the first %d of %d samples were analysed", MaxRecords, MaxRecords+c.dropped))
+	}
 
-	a := &Activity{ID: activityID(f.FileId, data), Version: AnalysisVersion, Device: deviceName(f.FileId)}
+	a := &Activity{ID: activityID(f.FileId, data), Version: AnalysisVersion, Device: deviceName(f.FileId), Warnings: warnings}
 	first := f.Sessions[0]
 	a.Start = firstTime(first.StartTime, recordStart(f.Records), first.Timestamp)
 	a.UTCOffsetMin = utcOffset(f.Activity)
@@ -66,7 +90,8 @@ func Parse(data []byte) (*Activity, error) {
 		a.Sport, a.SubSport = "multisport", ""
 	}
 	a.Kind = classify(first.Sport, first.SubSport, a.Name, len(f.Sessions))
-	a.Laps = laps(f, a.Start)
+	sportAt := sessionSports(f.Sessions)
+	a.Laps = laps(f, a.Start, sportAt)
 	a.Sets = sets(f.UnrelatedMessages, a.Start)
 	for _, s := range a.Sets {
 		if s.Rest {
@@ -80,33 +105,86 @@ func Parse(data []byte) (*Activity, error) {
 	}
 	a.HRZones, a.PowerZones = zones(f)
 	a.HRV = hrvSummary(f.HRVs)
-	a.Stream = stream(f.Records, a.Start, stepSport(first.Sport))
-	analyze(a)
-	if warning != "" {
-		a.Warnings = append(a.Warnings, warning)
+	a.Stream = stream(f.Records, a.Start, sportAt)
+	if a.Stream != nil {
+		a.Stream.Pauses = pauses(f.Events, a.Start)
 	}
+	analyze(a)
 	return a, nil
 }
 
-// decode reads all FIT sequences of a (possibly chained) file. A damaged
-// later sequence is dropped with a warning.
-func decode(data []byte, opts ...decoder.Option) ([]proto.Message, string, error) {
-	dec := decoder.New(bytes.NewReader(data), opts...)
-	var mesgs []proto.Message
-	for dec.Next() {
-		fit, err := dec.Decode()
-		if err != nil {
-			if len(mesgs) > 0 {
-				return mesgs, "a damaged part at the end of the file was left out", nil
-			}
-			return nil, "", fmt.Errorf("decode FIT: %w", err)
+// collector builds the activity while the file is decoded, keeping at most
+// MaxRecords samples.
+type collector struct {
+	act     *filedef.Activity
+	mesgs   int
+	records int
+	dropped int
+}
+
+func (c *collector) OnMesg(m proto.Message) {
+	c.mesgs++
+	if m.Num == mesgnum.Record {
+		if c.records >= MaxRecords {
+			c.dropped++
+			return
 		}
-		mesgs = append(mesgs, fit.Messages...)
+		c.records++
 	}
-	if len(mesgs) == 0 {
-		return nil, "", errors.New("not a FIT file")
+	c.act.Add(m)
+}
+
+// decode reads all FIT sequences of a (possibly chained) file. Whatever was
+// decoded before an error stays in the collector.
+func decode(data []byte, opts ...decoder.Option) (*collector, error) {
+	c := &collector{act: filedef.NewActivity()}
+	c.act.FileId.Type = typedef.FileInvalid // set by the file's own file_id message
+	opts = append(opts, decoder.WithMesgListener(c), decoder.WithBroadcastOnly(), decoder.WithBroadcastMesgCopy())
+	dec := decoder.New(bytes.NewReader(data), opts...)
+	for dec.Next() {
+		if _, err := dec.Decode(); err != nil {
+			return c, err
+		}
 	}
-	return mesgs, "", nil
+	return c, nil
+}
+
+// sessionSports returns the sport at a moment: that of the session it falls
+// in, else the first session's.
+func sessionSports(sessions []*mesgdef.Session) func(time.Time) typedef.Sport {
+	return func(t time.Time) typedef.Sport {
+		for _, s := range sessions {
+			if s.Sport != typedef.SportInvalid && !t.Before(s.StartTime) && !t.After(s.Timestamp) {
+				return s.Sport
+			}
+		}
+		return sessions[0].Sport
+	}
+}
+
+// pauses returns the stretches (offsets from start) during which the timer
+// was stopped, manually or by auto-pause.
+func pauses(events []*mesgdef.Event, start time.Time) [][2]float64 {
+	var out [][2]float64
+	pausedAt := -1.0
+	for _, e := range events {
+		if e.Event != typedef.EventTimer || e.Timestamp.IsZero() {
+			continue
+		}
+		t := e.Timestamp.Sub(start).Seconds()
+		switch e.EventType {
+		case typedef.EventTypeStop, typedef.EventTypeStopAll, typedef.EventTypeStopDisable, typedef.EventTypeStopDisableAll:
+			if pausedAt < 0 {
+				pausedAt = t
+			}
+		case typedef.EventTypeStart:
+			if pausedAt >= 0 && t > pausedAt {
+				out = append(out, [2]float64{pausedAt, t})
+			}
+			pausedAt = -1
+		}
+	}
+	return out
 }
 
 // activityID is stable for the same recording, whether it comes straight
@@ -288,7 +366,7 @@ func multisport(sessions []*mesgdef.Session, start time.Time) (Summary, []Segmen
 	return total, segs
 }
 
-func laps(f *filedef.Activity, start time.Time) []Lap {
+func laps(f *filedef.Activity, start time.Time, sportAt func(time.Time) typedef.Sport) []Lap {
 	stepNames := map[typedef.MessageIndex]string{}
 	for _, s := range f.WorkoutSteps {
 		name := strings.TrimSpace(s.WktStepName)
@@ -301,10 +379,14 @@ func laps(f *filedef.Activity, start time.Time) []Lap {
 	}
 	out := make([]Lap, 0, len(f.Laps))
 	for i, l := range f.Laps {
-		steps := stepSport(l.Sport)
+		sport := l.Sport
+		if sport == typedef.SportInvalid {
+			sport = sportAt(firstTime(l.StartTime, l.Timestamp))
+		}
+		steps := stepSport(sport)
 		lap := Lap{
 			Index:     i + 1,
-			Sport:     enumName(l.Sport, l.Sport != typedef.SportInvalid),
+			Sport:     enumName(sport, sport != typedef.SportInvalid),
 			Intensity: enumName(l.Intensity, l.Intensity != typedef.IntensityInvalid),
 			Trigger:   enumName(l.LapTrigger, l.LapTrigger != typedef.LapTriggerInvalid),
 			StartS:    offset(l.StartTime, start),
@@ -480,7 +562,7 @@ func hrvSummary(hrvs []*mesgdef.Hrv) *HRVSummary {
 	return rrSummary(rr)
 }
 
-func stream(records []*mesgdef.Record, start time.Time, steps bool) *Stream {
+func stream(records []*mesgdef.Record, start time.Time, sportAt func(time.Time) typedef.Sport) *Stream {
 	s := &Stream{}
 	last := math.Inf(-1)
 	for _, r := range records {
@@ -488,8 +570,8 @@ func stream(records []*mesgdef.Record, start time.Time, steps bool) *Stream {
 			continue
 		}
 		t := r.Timestamp.Sub(start).Seconds()
-		if t <= last || t > maxStreamS {
-			continue // duplicate, out-of-order or implausible sample
+		if t <= last || t < 0 || t > maxStreamS {
+			continue // duplicate, out of order, before the start or implausible
 		}
 		last = t
 		s.T = append(s.T, t)
@@ -503,7 +585,7 @@ func stream(records []*mesgdef.Record, start time.Time, steps bool) *Stream {
 		s.Power = append(s.Power, power)
 		c := math.NaN()
 		if r.Cadence != basetype.Uint8Invalid {
-			c = cadence(r.Cadence, r.FractionalCadenceScaled(), steps)
+			c = cadence(r.Cadence, r.FractionalCadenceScaled(), stepSport(sportAt(r.Timestamp)))
 		}
 		s.Cadence = append(s.Cadence, c)
 		s.Altitude = append(s.Altitude, nanIfInvalid(firstValid(r.EnhancedAltitudeScaled(), r.AltitudeScaled())))

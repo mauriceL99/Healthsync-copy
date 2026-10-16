@@ -199,11 +199,11 @@ func downsample(a *training.Activity, every int) []Sample {
 		p := math.Pow(10, float64(places))
 		return math.Round(a.sum/a.n*p) / p
 	}
-	bucket := -1
+	bucket, started := 0, false
 	var hr, speed, power, cad, alt acc
 	var dist float64
 	flush := func() {
-		if bucket < 0 {
+		if !started {
 			return
 		}
 		smp := Sample{OffsetS: float64(bucket * every), HR: avg(hr, 0), SpeedMps: avg(speed, 2), Power: avg(power, 0),
@@ -216,9 +216,9 @@ func downsample(a *training.Activity, every int) []Sample {
 	}
 	for i := range s.T {
 		b := int(s.T[i]) / every
-		if b != bucket {
+		if !started || b != bucket {
 			flush()
-			bucket = b
+			bucket, started = b, true
 		}
 		add(&hr, s.HR[i])
 		add(&speed, s.Speed[i])

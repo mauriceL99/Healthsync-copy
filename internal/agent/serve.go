@@ -25,7 +25,8 @@ const (
 	defaultServeAddr     = ":8788"
 	defaultFetchInterval = 15 * time.Minute
 	mcpTokenFile         = "mcp-token"
-	mcpTokenBytes        = 32
+	uploadTokenFile      = "upload-token"
+	secretTokenBytes     = 32
 )
 
 // ServeOptions configures `healthbridge serve`.
@@ -48,7 +49,14 @@ func Serve(ctx context.Context, env Env, stateDir string, o ServeOptions) error 
 		return err
 	}
 	_, err = s.MCPToken(false)
+	if err == nil {
+		_, err = s.UploadToken(false)
+	}
 	dir := s.Dir
+	// Uploads interrupted by a crash or restart leave spooled files behind.
+	if rerr := os.RemoveAll(s.TmpDir()); rerr != nil {
+		env.logf("could not clear %s: %v", s.TmpDir(), rerr)
+	}
 	s.Close()
 	if err != nil {
 		return err
@@ -57,8 +65,9 @@ func Serve(ctx context.Context, env Env, stateDir string, o ServeOptions) error 
 	var mu sync.Mutex
 	m := &MCP{Env: env, StateDir: dir, Lock: &mu}
 	srv := &http.Server{
-		Addr:              o.Addr,
-		Handler:           m.HTTPHandler(func() (string, error) { return readMCPToken(dir) }),
+		Addr: o.Addr,
+		Handler: m.HTTPHandler(func() (string, error) { return readToken(dir, mcpTokenFile) },
+			func() (string, error) { return readToken(dir, uploadTokenFile) }),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      2 * time.Minute,
@@ -122,28 +131,35 @@ func fetchLoop(ctx context.Context, env Env, stateDir string, every time.Duratio
 
 // MCPToken returns the secret last path segment of the connector URL, creating
 // it on first use. rotate replaces it; the old URL stops working at once.
-func (s *State) MCPToken(rotate bool) (string, error) {
+func (s *State) MCPToken(rotate bool) (string, error) { return s.secretToken(mcpTokenFile, rotate) }
+
+// UploadToken is the secret of the Garmin upload page. It is separate from the
+// connector secret because the page is opened in browsers, which keep URLs in
+// their history (and sync them), and it only allows adding workouts.
+func (s *State) UploadToken(rotate bool) (string, error) {
+	return s.secretToken(uploadTokenFile, rotate)
+}
+
+func (s *State) secretToken(file string, rotate bool) (string, error) {
 	if !rotate {
-		token, err := readMCPToken(s.Dir)
+		token, err := readToken(s.Dir, file)
 		if err != nil || token != "" {
 			return token, err
 		}
 	}
-	b := make([]byte, mcpTokenBytes)
+	b := make([]byte, secretTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	token := protocol.B64U(b)
-	if err := writePrivateAtomic(s.path(mcpTokenFile), []byte(token+"\n")); err != nil {
+	if err := writePrivateAtomic(s.path(file), []byte(token+"\n")); err != nil {
 		return "", err
 	}
 	return token, nil
 }
 
-// readMCPToken returns "" when no token exists yet. It needs no state lock: the
-// file is replaced atomically.
-func readMCPToken(dir string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, mcpTokenFile))
+func readToken(dir, file string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, file))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil
 	}
@@ -151,8 +167,12 @@ func readMCPToken(dir string) (string, error) {
 		return "", err
 	}
 	token := strings.TrimSpace(string(data))
-	if _, err := protocol.DecodeB64U(token, mcpTokenBytes); err != nil {
-		return "", fmt.Errorf("%s is damaged; create a new one with: healthbridge connector-url --rotate", mcpTokenFile)
+	if _, err := protocol.DecodeB64U(token, secretTokenBytes); err != nil {
+		hint := "healthbridge connector-url --rotate"
+		if file == uploadTokenFile {
+			hint = "healthbridge connector-url --upload --rotate"
+		}
+		return "", fmt.Errorf("%s is damaged; create a new one with: %s", file, hint)
 	}
 	return token, nil
 }

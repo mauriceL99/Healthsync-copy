@@ -13,7 +13,7 @@ import (
 const maxMCPRequestBytes = 1 << 20
 
 // HTTPHandler serves MCP over Streamable HTTP at /mcp/<token> and the Garmin
-// upload page at /upload/<token>. Every MCP request
+// upload page at /upload/<uploadToken>. Every MCP request
 // gets a plain JSON response; there are no server-initiated streams and no
 // sessions, which the transport allows. token is called per request, so a
 // rotated secret takes effect without a restart.
@@ -21,12 +21,12 @@ const maxMCPRequestBytes = 1 << 20
 // The token is the only credential: anyone who knows the URL can read the
 // health data. It is compared in constant time, and a wrong token gets the
 // same 404 as any unknown path.
-func (m *MCP) HTTPHandler(token func() (string, error)) http.Handler {
+func (m *MCP) HTTPHandler(token, uploadToken func() (string, error)) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	secret := func(next http.HandlerFunc) http.HandlerFunc {
+	secret := func(token func() (string, error), next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			want, err := token()
 			if err != nil {
@@ -41,7 +41,7 @@ func (m *MCP) HTTPHandler(token func() (string, error)) http.Handler {
 			next(w, r)
 		}
 	}
-	mux.HandleFunc("/mcp/{token}", secret(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/mcp/{token}", secret(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -49,7 +49,7 @@ func (m *MCP) HTTPHandler(token func() (string, error)) http.Handler {
 		}
 		m.serveHTTP(w, r)
 	}))
-	mux.HandleFunc("/upload/{token}", secret(m.serveUpload))
+	mux.HandleFunc("/upload/{token}", secret(uploadToken, m.serveUpload))
 	return mux
 }
 

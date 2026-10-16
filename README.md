@@ -138,7 +138,7 @@ MCP-Tools: `health_summary`, `health_metric_series`, `health_workouts`,
 | `unlink [--delete-relay-account]` | iPhone entkoppeln (lokale Daten bleiben erhalten) |
 | `mcp` | MCP-Server über stdio |
 | `serve [--addr :8788] [--fetch-every 15m]` | Dienst: holt regelmäßig ab, beantwortet MCP über HTTP unter `/mcp/<geheim>` und nimmt Garmin-Dateien unter `/upload/<geheim>` an |
-| `connector-url [--public-url URL] [--rotate] [--upload]` | geheime Connector-Adresse für `serve` anzeigen bzw. neu erzeugen; `--upload`: Adresse der Upload-Seite für Garmin-Dateien |
+| `connector-url [--public-url URL] [--upload] [--rotate]` | geheime Connector-Adresse für `serve` anzeigen bzw. neu erzeugen; `--upload`: Adresse der Upload-Seite für Garmin-Dateien (eigenes Geheimnis) |
 | `import [--json] DATEI_ODER_ORDNER…` | Garmin-Trainings importieren: `.fit`, `.fit.gz`, ZIP aus Garmin Connect, Konto-Export (auch verschachtelt), Ordner |
 | `activities [--days 30] [--kind run\|bike\|strength\|hyrox\|…]` | importierte Trainings mit Pace, Leistung, Puls, Belastung, Training Effect |
 | `activity [ID\|latest] [--kind K] [--samples SEK]` | Einzelanalyse: Runden, Zonen, Bestleistungen, Entkopplung, Kraftsätze, HYROX |
@@ -170,10 +170,10 @@ solltest du die Festplattenverschlüsselung aktivieren.
   und jede Ausgabe ist als Daten, nicht als Anweisung, gekennzeichnet.
 * **Server-Modus (`serve`):** Der Agent entschlüsselt dann auf dem eigenen Server statt
   auf dem eigenen Rechner. Die Connector-Adresse enthält ein 256-Bit-Geheimnis und ist
-  der einzige Zugangsschutz. Über `/mcp/` lassen sich Daten nur lesen, über die
-  Upload-Seite (`/upload/`, gleiches Geheimnis) zusätzlich Trainings hinzufügen, aber
-  nichts ändern oder löschen. Das Geheimnis wird nicht protokolliert und lässt sich mit
-  `connector-url --rotate` sofort ersetzen.
+  der einzige Zugangsschutz; über `/mcp/` lassen sich Daten nur lesen. Die Upload-Seite
+  (`/upload/`) hat ein eigenes Geheimnis und erlaubt nur, Trainings hinzuzufügen. Beide
+  Geheimnisse werden nicht protokolliert und lassen sich mit `connector-url --rotate`
+  bzw. `connector-url --upload --rotate` sofort ersetzen.
 * **Garmin-Dateien:** Die Originaldateien (mit GPS-Strecke) bleiben auf dem Rechner bzw.
   Server des Agenten. Die Werkzeuge geben nie GPS-Positionen aus.
 * **Kein Medizinprodukt:** HealthBridge ist für Wellness und Automatisierung gedacht,

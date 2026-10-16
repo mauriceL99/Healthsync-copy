@@ -17,6 +17,6 @@ read your health data. Replace it with `./deploy/hb connector-url --rotate`.
 All ten tools are the same as for the local `healthbridge mcp`: six for Apple Health
 (`health_*`) and four for Garmin workouts imported from watch files (`training_*`).
 The query tools are marked read-only, so ChatGPT only asks for confirmation before
-`health_sync`. Garmin files are added on the upload page,
-`./deploy/hb connector-url --upload` (guide: [`docs/GARMIN.md`](../../docs/GARMIN.md)).
+`health_sync`. Garmin files are added on the upload page, which has its own secret
+(`./deploy/hb connector-url --upload`; guide: [`docs/GARMIN.md`](../../docs/GARMIN.md)).
 After an update that adds tools, refresh the connector in ChatGPT's settings.

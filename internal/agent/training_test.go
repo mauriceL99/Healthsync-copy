@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mauriceL99/Healthsync-copy/internal/training"
 	"github.com/mauriceL99/Healthsync-copy/internal/training/fitsample"
 )
 
@@ -144,7 +145,7 @@ func TestStaleAnalysisIsRefreshed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.db.Exec(`UPDATE activities SET version = 0, summary = '{"id":"x","kind":"run"}'`); err != nil {
+	if _, err := db.db.Exec(`UPDATE activities SET version = 0, date = '1999-01-01', summary = '{"id":"x","kind":"run"}'`); err != nil {
 		t.Fatal(err)
 	}
 	acts, err := db.Activities(t.Context(), "0000-00-00", "9999-99-99")
@@ -152,8 +153,8 @@ func TestStaleAnalysisIsRefreshed(t *testing.T) {
 		t.Fatalf("re-analysed: %v %+v", err, acts)
 	}
 	var stale int
-	if err := db.db.QueryRow(`SELECT COUNT(*) FROM activities WHERE version != 1`).Scan(&stale); err != nil || stale != 0 {
-		t.Fatalf("stored versions not updated: %d %v", stale, err)
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM activities WHERE version != ? OR date = '1999-01-01'`, training.AnalysisVersion).Scan(&stale); err != nil || stale != 0 {
+		t.Fatalf("stored versions or dates not updated: %d %v", stale, err)
 	}
 }
 
@@ -190,9 +191,14 @@ func TestUploadPageAndTrainingTools(t *testing.T) {
 		t.Fatalf("upload url: %s %s", urlOut, e)
 	}
 	token := strings.TrimPrefix(strings.TrimSpace(urlOut), "http://localhost:1/upload/")
+	mcpOut, _, _ := run(t, "--state-dir", dir, "connector-url", "--public-url", "http://localhost:1")
+	mcpToken := strings.TrimPrefix(strings.TrimSpace(mcpOut), "http://localhost:1/mcp/")
+	if mcpToken == "" || mcpToken == token {
+		t.Fatalf("the upload page needs its own secret: %q %q", token, mcpToken)
+	}
 
 	m := &MCP{Env: Env{Out: io.Discard, Err: io.Discard, Now: func() time.Time { return time.Now() }}, StateDir: dir, Lock: new(sync.Mutex)}
-	srv := httptest.NewServer(m.HTTPHandler(func() (string, error) { return readMCPToken(dir) }))
+	srv := httptest.NewServer(m.HTTPHandler(func() (string, error) { return readToken(dir, mcpTokenFile) }, func() (string, error) { return readToken(dir, uploadTokenFile) }))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/upload/" + token)
@@ -204,8 +210,13 @@ func TestUploadPageAndTrainingTools(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.Contains(string(page), `<form id="f" method="post"`) || resp.Header.Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("upload page: %d %s", resp.StatusCode, resp.Header)
 	}
-	if status, _ := uploadFiles(t, srv.URL+"/upload/wrong", map[string][]byte{"a.fit": nil}); status != http.StatusNotFound {
-		t.Fatalf("wrong secret: %d", status)
+	for _, wrong := range []string{"wrong", mcpToken} {
+		if status, _ := uploadFiles(t, srv.URL+"/upload/"+wrong, map[string][]byte{"a.fit": nil}); status != http.StatusNotFound {
+			t.Fatalf("upload with secret %q: %d", wrong, status)
+		}
+	}
+	if status, _ := postMCP(t, srv.URL+"/mcp/"+token, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`); status != http.StatusNotFound {
+		t.Fatalf("the upload secret must not open MCP: %d", status)
 	}
 
 	hyrox, _ := os.ReadFile(filepath.Join(samples, "healthbridge-sample-hyrox.fit"))
@@ -218,7 +229,7 @@ func TestUploadPageAndTrainingTools(t *testing.T) {
 		t.Fatalf("temporary upload files left behind: %v", entries)
 	}
 
-	endpoint := srv.URL + "/mcp/" + token
+	endpoint := srv.URL + "/mcp/" + mcpToken
 	_, list := postMCP(t, endpoint, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	names := ""
 	for _, tool := range list["result"].(map[string]any)["tools"].([]any) {

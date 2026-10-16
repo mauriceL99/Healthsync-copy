@@ -254,6 +254,6 @@ li { margin: .2rem 0; } a { color: var(--accent); }
 </style></head><body>
 `
 
-const pageFoot = `<p style="color:var(--muted);font-size:.85rem;margin-top:2rem">Keep this page's address private: it gives access to your health data.</p>
+const pageFoot = `<p style="color:var(--muted);font-size:.85rem;margin-top:2rem">Keep this page's address private: anyone who has it can add workouts.</p>
 </body></html>
 `

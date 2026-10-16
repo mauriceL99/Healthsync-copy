@@ -50,9 +50,10 @@ Am Ende von `setup.sh` steht unter Punkt 3 die **Upload-Adresse**, zum Beispiel
 3. Die angezeigte Adresse im Browser öffnen, am Computer und am besten auch auf dem
    iPhone in Safari. Dort ein **Lesezeichen** anlegen.
 
-Behandle die Adresse wie ein Passwort. Sie enthält dasselbe Geheimnis wie die
-Connector-Adresse. Mit `./deploy/hb connector-url --rotate` machst du beide ungültig
-und bekommst neue.
+Die Upload-Adresse hat ein **eigenes Geheimnis**. Wer sie kennt, kann nur Trainings
+hinzufügen, aber nichts lesen. Ein Lesezeichen im Browser verrät also nicht deine Daten.
+Gib sie trotzdem nicht weiter. Eine neue Adresse bekommst du mit
+`./deploy/hb connector-url --upload --rotate`; die alte gilt dann nicht mehr.
 
 > Hast du HealthBridge vor diesem Update eingerichtet? Dann einmal auf dem Server
 > `cd Healthsync-copy && git pull && ./deploy/setup.sh` ausführen. Deine Daten bleiben
@@ -124,9 +125,10 @@ deshalb Weg C besser.
    manchmal länger. Der Link läuft nach einiger Zeit ab, also bald herunterladen.
 3. Die ZIP-Datei herunterladen. Sie kann mehrere Gigabyte groß sein. **Nicht entpacken.**
 4. Die ZIP-Datei auf der Upload-Seite hochladen. Das dauert je nach Größe und Internet
-   einige Minuten. Bitte die Seite offen lassen, bis das Ergebnis erscheint. Der Export
-   enthält auch Dateien ohne Training (Schlaf, Einstellungen …). Sie werden übersprungen
-   und als „files without a workout skipped“ gezählt.
+   einige Minuten. Bitte die Seite offen lassen, bis das Ergebnis erscheint. Solange der
+   Import läuft, antworten ChatGPT und Claude nicht auf Fragen an HealthBridge; danach
+   wieder normal. Der Export enthält auch Dateien ohne Training (Schlaf, Einstellungen …).
+   Sie werden übersprungen und als „files without a workout skipped“ gezählt.
 
 **Größer als 4 GB?** Dann so:
 
@@ -256,5 +258,6 @@ Die Auswertungen sind Trainingshinweise, keine medizinische Beratung.
 | Übungsnamen oder Gewichte fehlen | Auf der Uhr eintragen. Korrekturen in Garmin Connect stehen nicht in der Originaldatei |
 | ChatGPT kennt die neuen Werkzeuge nicht | Connector aktualisieren (siehe Schritt 3) |
 | Upload bricht bei großen Dateien ab | Datei in Teilen hochladen oder per `scp` kopieren (Weg C) |
-| Upload-Seite zeigt „404 page not found“ | Adresse unvollständig kopiert oder mit `--rotate` erneuert. Neu anzeigen mit `./deploy/hb connector-url --upload` |
+| Upload-Seite zeigt „404 page not found“ | Adresse unvollständig kopiert oder mit `--upload --rotate` erneuert. Neu anzeigen mit `./deploy/hb connector-url --upload` |
+| Hinweis „damaged or incomplete“ bei einem Training | Die Datei wurde unvollständig kopiert. Ausgewertet wird, was lesbar ist. Besser die Datei aus Garmin Connect („Original exportieren“) noch einmal hochladen |
 | Uhrzeit wirkt verschoben | Die Zeiten folgen der Ortszeit der Uhr beim Training |

@@ -134,9 +134,10 @@ cat <<EOF
    Anleitung: docs/GARMIN.md
 
 4. Nützlich
-   Status:              ./deploy/hb status
-   Zusammenfassung:     ./deploy/hb summary --period week
-   Neue Geheimadresse:  ./deploy/hb connector-url --rotate   (gilt auch für die Upload-Seite)
-   Garmin-Trainings:    ./deploy/hb activities
-   Aktualisieren:       git pull && sudo ./deploy/setup.sh
+   Status:                  ./deploy/hb status
+   Zusammenfassung:         ./deploy/hb summary --period week
+   Garmin-Trainings:        ./deploy/hb activities
+   Neue Connector-Adresse:  ./deploy/hb connector-url --rotate
+   Neue Upload-Adresse:     ./deploy/hb connector-url --upload --rotate
+   Aktualisieren:           git pull && sudo ./deploy/setup.sh
 EOF

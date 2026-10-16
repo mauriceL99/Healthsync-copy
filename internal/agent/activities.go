@@ -28,7 +28,7 @@ import (
 // docs/GARMIN.md.
 
 const (
-	maxFITBytes       = 64 << 20 // one activity file
+	maxFITBytes       = 32 << 20 // one activity file (real ones are a few MB)
 	maxNestedZipBytes = 4 << 30  // one archive inside an archive (account export parts)
 	maxZipDepth       = 3
 	maxImportErrors   = 10 // failures listed by name; the rest are only counted
@@ -413,11 +413,16 @@ func (d *DB) reanalyze(ctx context.Context, id string) (*training.Activity, erro
 	if err != nil {
 		return nil, err
 	}
+	loc, err := d.Location(ctx)
+	if err != nil {
+		return nil, err
+	}
 	summary, err := json.Marshal(a)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := d.db.ExecContext(ctx, `UPDATE activities SET version = ?, kind = ?, summary = ? WHERE id = ?`, a.Version, a.Kind, string(summary), id); err != nil {
+	if _, err := d.db.ExecContext(ctx, `UPDATE activities SET version = ?, kind = ?, summary = ?, date = ?, start = ? WHERE id = ?`,
+		a.Version, a.Kind, string(summary), training.LocalDate(a, loc), protocol.FormatTime(a.Start), id); err != nil {
 		return nil, fmt.Errorf("store re-analysed activity %s: %w", id, err)
 	}
 	return a, nil
