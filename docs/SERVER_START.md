@@ -290,6 +290,7 @@ Bewahre sie entsprechend sicher auf.
 
 | Problem | Lösung |
 | --- | --- |
+| `./deploy/setup.sh: No such file or directory` | Der Server-Modus ist noch nicht im Hauptzweig (`main`) auf GitHub. Den offenen Pull Request auf GitHub mergen, dann im Ordner `Healthsync-copy` `git pull` eingeben und `./deploy/setup.sh` erneut starten |
 | `Permission denied (publickey)` beim `ssh` | Der Schlüssel aus Schritt 1 wurde beim Server nicht hinterlegt. In der Hetzner Console den Server neu erstellen und dabei den SSH-Key auswählen, oder über „Rescue“ → „Root-Passwort zurücksetzen“ mit Passwort anmelden |
 | Setup: „Die Adresse … ist im Internet nicht bekannt“ | Bei eigener Domain fehlt der A-Eintrag oder er ist noch nicht verbreitet (bis zu 1 Stunde warten). Mit Enter die sslip.io-Adresse nehmen |
 | Setup: „https://… antwortet nicht“ | Meist blockiert eine Firewall die Ports 80 und 443. In der Hetzner Console unter „Firewalls“ entweder keine Firewall zuweisen oder TCP 22, 80 und 443 erlauben. Danach `./deploy/setup.sh` erneut starten |
