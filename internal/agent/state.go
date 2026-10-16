@@ -72,8 +72,11 @@ func (s *State) path(parts ...string) string {
 // ConfigPath, DBPath, QRPath and KeysDir locate files in the state directory.
 func (s *State) ConfigPath() string { return s.path("config.json") }
 func (s *State) DBPath() string     { return s.path("health.db") }
-func (s *State) QRPath() string     { return s.path("pairing-qr.png") }
-func (s *State) KeysDir() string    { return s.path("keys") }
+
+// TmpDir holds temporary files of imports (archives inside archives, uploads).
+func (s *State) TmpDir() string  { return s.path("tmp") }
+func (s *State) QRPath() string  { return s.path("pairing-qr.png") }
+func (s *State) KeysDir() string { return s.path("keys") }
 
 // OpenState locks and loads a state directory. A missing config is not an
 // error; callers use Initialized to check.

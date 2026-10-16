@@ -12,7 +12,8 @@ import (
 // maxMCPRequestBytes bounds one HTTP request; tool calls are small JSON objects.
 const maxMCPRequestBytes = 1 << 20
 
-// HTTPHandler serves MCP over Streamable HTTP at /mcp/<token>. Every request
+// HTTPHandler serves MCP over Streamable HTTP at /mcp/<token> and the Garmin
+// upload page at /upload/<token>. Every MCP request
 // gets a plain JSON response; there are no server-initiated streams and no
 // sessions, which the transport allows. token is called per request, so a
 // rotated secret takes effect without a restart.
@@ -25,24 +26,30 @@ func (m *MCP) HTTPHandler(token func() (string, error)) http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	mux.HandleFunc("/mcp/{token}", func(w http.ResponseWriter, r *http.Request) {
-		want, err := token()
-		if err != nil {
-			m.Env.logf("connector token unavailable: %v", err)
-			http.Error(w, "service not ready", http.StatusServiceUnavailable)
-			return
+	secret := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			want, err := token()
+			if err != nil {
+				m.Env.logf("connector token unavailable: %v", err)
+				http.Error(w, "service not ready", http.StatusServiceUnavailable)
+				return
+			}
+			if want == "" || subtle.ConstantTimeCompare([]byte(r.PathValue("token")), []byte(want)) != 1 {
+				http.NotFound(w, r)
+				return
+			}
+			next(w, r)
 		}
-		if want == "" || subtle.ConstantTimeCompare([]byte(r.PathValue("token")), []byte(want)) != 1 {
-			http.NotFound(w, r)
-			return
-		}
+	}
+	mux.HandleFunc("/mcp/{token}", secret(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		m.serveHTTP(w, r)
-	})
+	}))
+	mux.HandleFunc("/upload/{token}", secret(m.serveUpload))
 	return mux
 }
 

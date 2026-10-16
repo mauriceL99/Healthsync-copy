@@ -157,10 +157,16 @@ func readMCPToken(dir string) (string, error) {
 	return token, nil
 }
 
-// ConnectorURL joins the public base URL of the server and the secret path.
+// ConnectorURL is the MCP address that ChatGPT and Claude connect to.
+func ConnectorURL(publicURL, token string) (string, error) { return secretURL(publicURL, "mcp", token) }
+
+// UploadURL is the address of the page for uploading Garmin files.
+func UploadURL(publicURL, token string) (string, error) { return secretURL(publicURL, "upload", token) }
+
+// secretURL joins the public base URL of the server, a route and the secret.
 // Plain http is accepted only for localhost (local testing): assistants in the
 // cloud require https anyway.
-func ConnectorURL(publicURL, token string) (string, error) {
+func secretURL(publicURL, route, token string) (string, error) {
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(publicURL), "/"))
 	if err != nil || u.Host == "" || (u.Scheme != "https" && !(u.Scheme == "http" && isLocalHost(u.Hostname()))) {
 		return "", fmt.Errorf("public URL must look like https://your-server.example (got %q)", publicURL)
@@ -168,7 +174,7 @@ func ConnectorURL(publicURL, token string) (string, error) {
 	if u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("public URL must not contain ? or #: %q", publicURL)
 	}
-	return u.String() + "/mcp/" + token, nil
+	return u.String() + "/" + route + "/" + token, nil
 }
 
 func isLocalHost(host string) bool {

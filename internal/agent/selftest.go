@@ -96,6 +96,29 @@ func SelfTest(ctx context.Context, env Env) error {
 	}); err != nil {
 		return err
 	}
+	if err := step("import and analyse a synthetic Garmin run (FIT)", func() error {
+		paths, err := WriteSampleFIT(filepath.Join(dir, "fit"), now)
+		if err != nil {
+			return err
+		}
+		res, err := Import(ctx, db, filepath.Join(dir, "tmp"), paths[:1], now)
+		if err != nil {
+			return err
+		}
+		if res.Imported != 1 {
+			return fmt.Errorf("expected 1 imported activity, got %+v", res)
+		}
+		d, err := ActivityDetailFor(ctx, db, "", "", false, 0)
+		if err != nil {
+			return err
+		}
+		if b := d.Activity.Bests; len(b) < 2 || b[1].Label != "1 km" || b[1].Seconds != 250 {
+			return fmt.Errorf("best 1 km is wrong: %+v", b)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 	return step("summarize and render dashboard", func() error {
 		cov, err := db.Coverage(ctx)
 		if err != nil {

@@ -8,12 +8,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
 	"github.com/mauriceL99/Healthsync-copy/internal/client"
 	"github.com/mauriceL99/Healthsync-copy/internal/healthdata"
 	"github.com/mauriceL99/Healthsync-copy/internal/protocol"
+	"github.com/mauriceL99/Healthsync-copy/internal/training/fitsample"
 )
 
 // simulatorChunkDays mirrors SyncPlan.chunkDays in the iOS app
@@ -144,4 +147,35 @@ func chunkBatch(batch map[string]any, n int, loc *time.Location) []map[string]an
 		out = append(out, chunk)
 	}
 	return out
+}
+
+// SampleActivityPrefix starts the IDs of the synthetic sample workouts.
+var SampleActivityPrefix = fmt.Sprintf("fit-%d-", fitsample.Serial)
+
+// WriteSampleFIT writes synthetic workout files (a run, a strength session and
+// a HYROX simulation on the three days before now) into dir. Their IDs only
+// depend on the day, so writing and importing them again on the same day adds
+// nothing twice.
+func WriteSampleFIT(dir string, now time.Time) ([]string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	day := time.Date(now.Year(), now.Month(), now.Day(), 6, 30, 0, 0, time.UTC)
+	samples := []struct {
+		name string
+		data []byte
+	}{
+		{"healthbridge-sample-run.fit", fitsample.Run(day.AddDate(0, 0, -3))},
+		{"healthbridge-sample-strength.fit", fitsample.Strength(day.AddDate(0, 0, -2))},
+		{"healthbridge-sample-hyrox.fit", fitsample.Hyrox(day.AddDate(0, 0, -1))},
+	}
+	var paths []string
+	for _, s := range samples {
+		p := filepath.Join(dir, s.name)
+		if err := writeNewPrivate(p, s.data, true); err != nil {
+			return paths, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, nil
 }

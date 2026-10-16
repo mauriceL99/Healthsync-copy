@@ -53,6 +53,21 @@ CREATE TABLE IF NOT EXISTS quarantine (
   last_attempt_at TEXT NOT NULL,
   attempts        INTEGER NOT NULL
 );
+-- Workouts imported from watch files (FIT). summary is a training.Activity
+-- without its stream; fit is the original file, so a newer analysis version
+-- can re-derive everything.
+CREATE TABLE IF NOT EXISTS activities (
+  id          TEXT PRIMARY KEY,
+  date        TEXT NOT NULL,
+  start       TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  version     INTEGER NOT NULL,
+  summary     TEXT NOT NULL,
+  fit         BLOB NOT NULL,
+  source      TEXT NOT NULL DEFAULT '',
+  imported_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS activities_by_date ON activities(date);
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -309,6 +324,10 @@ type Coverage struct {
 	Envelopes   int    `json:"envelopes_processed"`
 	Failed      int    `json:"envelopes_failed"`
 	Quarantined int    `json:"envelopes_in_quarantine"`
+	// Activities are workouts imported from watch files (Garmin FIT).
+	Activities    int    `json:"imported_activities"`
+	FirstActivity string `json:"first_activity_date,omitempty"`
+	LastActivity  string `json:"last_activity_date,omitempty"`
 }
 
 // Coverage reports what is stored locally.
@@ -325,7 +344,11 @@ func (d *DB) Coverage(ctx context.Context) (Coverage, error) {
 	if err := d.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(status != 'ok'), 0) FROM envelopes`).Scan(&c.Envelopes, &c.Failed); err != nil {
 		return c, err
 	}
-	err := d.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quarantine`).Scan(&c.Quarantined)
+	if err := d.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quarantine`).Scan(&c.Quarantined); err != nil {
+		return c, err
+	}
+	err := d.db.QueryRowContext(ctx, `SELECT COUNT(*), MIN(date), MAX(date) FROM activities`).Scan(&c.Activities, &first, &last)
+	c.FirstActivity, c.LastActivity = first.String, last.String
 	return c, err
 }
 

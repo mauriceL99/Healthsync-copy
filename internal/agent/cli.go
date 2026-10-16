@@ -37,15 +37,25 @@ Data
   dashboard      Write a self-contained HTML dashboard
   export         Export days as CSV or NDJSON
 
+Garmin (workout files; see docs/GARMIN.md)
+  import         Import FIT files, Garmin Connect ZIPs, the account export or a folder
+  activities     Imported workouts with pace, power, heart rate, load and training effect
+  activity       Full analysis of one workout (laps, zones, bests, strength sets, HYROX)
+  training       Weekly volume, training load, acute:chronic ratio, intensity distribution
+  records        Personal bests (times, power, estimated 1RM, HYROX)
+  delete-activity  Remove imported workouts by ID (--samples: the synthetic samples)
+
 Agents
   mcp            Run as an MCP server on stdio (for Claude Code, Codex, …)
   serve          Run as a service: fetch regularly and answer MCP over HTTP
                  (for ChatGPT and Claude on the web/apps; see docs/SERVER_START.md)
-  connector-url  Print the secret connector URL that serve answers on
+  connector-url  Print the secret connector URL that serve answers on (--upload: the
+                 page for uploading Garmin files)
 
 Other
   self-test      Check the executable offline
   dev simulate-device   Pair a simulated iPhone and upload synthetic data
+  dev sample-fit        Write synthetic Garmin workouts (run, strength, HYROX) to try import
   version        Print the version
 
 Run "healthbridge <command> --help" for command flags.
@@ -80,11 +90,11 @@ func Run(args []string, env Env) int {
 	defer stop()
 	cmd, rest := args[0], args[1:]
 	if cmd == "dev" {
-		if len(rest) == 0 || rest[0] != "simulate-device" {
-			fmt.Fprintln(env.Err, "usage: healthbridge dev simulate-device [flags]")
+		if len(rest) == 0 || (rest[0] != "simulate-device" && rest[0] != "sample-fit") {
+			fmt.Fprintln(env.Err, "usage: healthbridge dev simulate-device|sample-fit [flags]")
 			return 2
 		}
-		cmd, rest = "dev simulate-device", rest[1:]
+		cmd, rest = "dev "+rest[0], rest[1:]
 	}
 	err := dispatch(ctx, env, cmd, rest, stateDir)
 	switch {
@@ -136,6 +146,35 @@ func emit(env Env, o outputFlags, data []byte) error {
 	abs, _ := filepath.Abs(o.out)
 	fmt.Fprintf(env.Err, "Wrote %s (contains sensitive health data; keep it private).\n", abs)
 	return nil
+}
+
+// parseAnywhere parses flags before, between and after positional arguments
+// (the flag package alone stops at the first positional one) and returns the
+// positional arguments.
+func parseAnywhere(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		if fs.NArg() == 0 {
+			return positional, nil
+		}
+		positional = append(positional, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
+}
+
+// emitView writes a view as Markdown text or as JSON.
+func emitView(env Env, o outputFlags, v any, text string) error {
+	if o.format == "json" {
+		data, err := jsonBytes(v)
+		if err != nil {
+			return err
+		}
+		return emit(env, o, data)
+	}
+	return emit(env, o, []byte(text))
 }
 
 func jsonBytes(v any) ([]byte, error) {
@@ -422,6 +461,151 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return emit(env, o, data)
 		})
 
+	case "import":
+		fs := newFlags(env, cmd, "import [--json] FILE_OR_FOLDER...", &stateDir)
+		asJSON := fs.Bool("json", false, "print JSON")
+		paths, err := parseAnywhere(fs, args)
+		if err != nil {
+			return err
+		}
+		if len(paths) == 0 {
+			fmt.Fprintln(env.Err, "name at least one .fit file, .zip archive or folder")
+			fs.Usage()
+			return errUsage
+		}
+		return withDB(ctx, stateDir, func(s *State, db *DB, _ Coverage) error {
+			res, err := Import(ctx, db, s.TmpDir(), paths, env.now())
+			if err != nil {
+				return err
+			}
+			if *asJSON {
+				data, err := jsonBytes(res)
+				if err != nil {
+					return err
+				}
+				_, err = env.Out.Write(data)
+				return err
+			}
+			_, err = io.WriteString(env.Out, RenderImport(res))
+			return err
+		})
+
+	case "delete-activity":
+		fs := newFlags(env, cmd, "delete-activity [--samples] [ID...]", &stateDir)
+		samples := fs.Bool("samples", false, "remove all synthetic sample workouts (from dev sample-fit)")
+		ids, err := parseAnywhere(fs, args)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 && !*samples {
+			fs.Usage()
+			return errUsage
+		}
+		return withDB(ctx, stateDir, func(_ *State, db *DB, _ Coverage) error {
+			n, err := db.DeleteActivities(ctx, ids)
+			if err != nil {
+				return err
+			}
+			if *samples {
+				k, err := db.DeleteActivitiesWithPrefix(ctx, SampleActivityPrefix)
+				if err != nil {
+					return err
+				}
+				n += k
+			}
+			fmt.Fprintf(env.Out, "Deleted %d activities.\n", n)
+			if n < len(ids) {
+				fmt.Fprintln(env.Err, "Some IDs were not found; list them with: healthbridge activities --days 3650")
+			}
+			return nil
+		})
+
+	case "activities":
+		var w windowFlags
+		var o outputFlags
+		fs := newFlags(env, cmd, "activities [--days N] [--end DATE] [--kind KIND] [--format text|json]", &stateDir)
+		addWindow(fs, &w, "", DefaultActivityDays)
+		addOutput(fs, &o, "text, json", "text")
+		kind := fs.String("kind", "", "only this kind: "+strings.Join(TrainingKinds, ", "))
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
+			win, err := ResolveWindow("", w.days, w.end, cov.LastActivity, env.now())
+			if err != nil {
+				return err
+			}
+			list, err := ListActivities(ctx, db, win, *kind)
+			if err != nil {
+				return err
+			}
+			return emitView(env, o, list, RenderActivities(list))
+		})
+
+	case "activity":
+		var o outputFlags
+		fs := newFlags(env, cmd, "activity [ID|latest] [--kind KIND] [--samples SECONDS] [--format text|json]", &stateDir)
+		addOutput(fs, &o, "text, json", "text")
+		kind := fs.String("kind", "", "with latest: the latest activity of this kind")
+		every := fs.Int("samples", 0, "include averaged samples every N seconds (json)")
+		ids, err := parseAnywhere(fs, args)
+		if err != nil {
+			return err
+		}
+		if len(ids) > 1 {
+			fs.Usage()
+			return errUsage
+		}
+		return withDB(ctx, stateDir, func(s *State, db *DB, _ Coverage) error {
+			d, err := ActivityDetailFor(ctx, db, strings.Join(ids, ""), *kind, *every > 0, *every)
+			if err != nil {
+				return err
+			}
+			return emitView(env, o, d, RenderActivityDetail(d))
+		})
+
+	case "training":
+		var w windowFlags
+		var o outputFlags
+		fs := newFlags(env, cmd, "training [--days N] [--end DATE] [--format text|json]", &stateDir)
+		addWindow(fs, &w, "", DefaultLoadDays)
+		addOutput(fs, &o, "text, json", "text")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
+			win, err := ResolveWindow("", w.days, w.end, cov.LastActivity, env.now())
+			if err != nil {
+				return err
+			}
+			r, err := BuildTrainingReport(ctx, db, win)
+			if err != nil {
+				return err
+			}
+			return emitView(env, o, r, RenderTrainingReport(r))
+		})
+
+	case "records":
+		var w windowFlags
+		var o outputFlags
+		fs := newFlags(env, cmd, "records [--days N] [--end DATE] [--format text|json]", &stateDir)
+		addWindow(fs, &w, "", DefaultRecordDays)
+		addOutput(fs, &o, "text, json", "text")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		return withDB(ctx, stateDir, func(s *State, db *DB, cov Coverage) error {
+			win, err := ResolveWindow("", w.days, w.end, cov.LastActivity, env.now())
+			if err != nil {
+				return err
+			}
+			r, err := ListRecords(ctx, db, win)
+			if err != nil {
+				return err
+			}
+			return emitView(env, o, r, RenderRecords(r))
+		})
+
 	case "metrics":
 		fs := newFlags(env, cmd, "metrics [--json]", &stateDir)
 		asJSON := fs.Bool("json", false, "print JSON")
@@ -524,6 +708,7 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 		fs := newFlags(env, cmd, "connector-url [--public-url https://your-server.example] [--rotate]", &stateDir)
 		publicURL := fs.String("public-url", os.Getenv("HEALTHBRIDGE_PUBLIC_URL"), "public HTTPS address of this server (or HEALTHBRIDGE_PUBLIC_URL)")
 		rotate := fs.Bool("rotate", false, "create a new secret; the old URL stops working immediately")
+		upload := fs.Bool("upload", false, "print the address of the upload page for Garmin files instead")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
@@ -542,6 +727,9 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 			return err
 		}
 		u, err := ConnectorURL(*publicURL, token)
+		if *upload {
+			u, err = UploadURL(*publicURL, token)
+		}
 		if err != nil {
 			return err
 		}
@@ -583,6 +771,26 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 		}
 		fmt.Fprintln(env.Err, "Simulator: uploading SYNTHETIC data (not real health data).")
 		return SimulateDevice(ctx, env, o)
+
+	case "dev sample-fit":
+		fs := newFlags(env, "dev sample-fit", "dev sample-fit --out FOLDER", &stateDir)
+		out := fs.String("out", "", "folder to write the sample files to")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		if *out == "" {
+			fs.Usage()
+			return errUsage
+		}
+		paths, err := WriteSampleFIT(*out, env.now())
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(env.Err, "Wrote SYNTHETIC workout files (made-up data, not from a real watch). Import them with: healthbridge import "+*out)
+		for _, p := range paths {
+			fmt.Fprintln(env.Out, p)
+		}
+		return nil
 	}
 	fmt.Fprintf(env.Err, "unknown command %q\n\n%s", cmd, usage)
 	return errUsage
@@ -619,6 +827,9 @@ func printStatus(w io.Writer, st StatusReport) {
 		fmt.Fprintf(w, "  Local data:   %d days (%s → %s), %d workouts\n", st.Local.Days, st.Local.FirstDate, st.Local.LastDate, st.Local.Workouts)
 	} else {
 		fmt.Fprintln(w, "  Local data:   none yet")
+	}
+	if st.Local.Activities > 0 {
+		fmt.Fprintf(w, "  Garmin:       %d imported activities (%s → %s)\n", st.Local.Activities, st.Local.FirstActivity, st.Local.LastActivity)
 	}
 	if st.Local.Quarantined > 0 {
 		fmt.Fprintf(w, "  Quarantine:   %d unreadable envelopes kept locally, retried on every fetch (update healthbridge if this persists)\n", st.Local.Quarantined)
