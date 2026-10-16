@@ -30,6 +30,8 @@ services:
       HEALTHBRIDGE_PUBLIC_URL: https://${HB_DOMAIN:?set HB_DOMAIN to the server name}
     volumes:
       - agent-data:/data
+      # Garmin files copied onto the server: ./deploy/hb import /import
+      - ./import:/import:ro
     # The agent talks to the relay through the public HTTPS name (the same
     # address the iPhone uses); this resolves it to this host directly.
     extra_hosts:

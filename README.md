@@ -3,7 +3,9 @@
 HealthBridge bringt Apple-Health-Daten vom iPhone **Ende-zu-Ende-verschlüsselt** zu
 deinem KI-Agenten: Claude Code, Codex, OpenClaw, Hermes oder jedes andere Tool mit
 MCP- bzw. Skill-Unterstützung. Der Agent erstellt daraus Tageszusammenfassungen,
-Trends, Workout-Analysen und Dashboards.
+Trends, Workout-Analysen und Dashboards. Dazu kommen auf Wunsch die **Trainingsdateien
+einer Garmin-Uhr** (FIT): Runden, Leistung, Laufdynamik, Kraftsätze, HYROX-Abschnitte,
+Trainingsbelastung und Rekorde ([`docs/GARMIN.md`](docs/GARMIN.md)).
 
 Das Projekt ist ein unabhängiger Nachbau des Konzepts der App
 **„Health Sync for AI Agents“** von Lukas Benedikt Osterheider. Die Analyse des
@@ -31,6 +33,7 @@ kompatibel. Name und Branding sind bewusst andere.
 | --- | --- |
 | [`ios/`](ios/) | SwiftUI-App: Pairing per QR, Metrikauswahl, HealthKit-Auslese, Verschlüsselung mit CryptoKit, Sync manuell, per Zeitplan oder bei neuen Health-Daten. Standard ist die persönliche Edition (alles freigeschaltet); ein Pro-Abo über StoreKit 2 gibt es nur in der Store-Edition |
 | [`cmd/healthbridge`](cmd/healthbridge) | Agent-CLI: `onboard`, `fetch`, `summary`, `series`, `workouts`, `dashboard`, `export`, `mcp`, … |
+| [`internal/training`](internal/training) | FIT-Dateien von Sportuhren lesen und auswerten: Bestleistungen, Entkopplung, Kraftsätze mit 1RM, HYROX-Abschnitte, Belastung (akut/chronisch, Fitness/Form), Rekorde. GPS wird nie ausgegeben |
 | [`cmd/healthbridge-relay`](cmd/healthbridge-relay) | Selbst hostbarer Relay-Server (eine Go-Binary, SQLite, Docker + Caddy) |
 | [`integrations/`](integrations/) | Claude-Code-Plugin (MCP + Skill + `/health`), Codex, OpenClaw, generischer Skill |
 | [`docs/`](docs/) | [Protokoll](docs/PROTOCOL.md), [Datenschema](docs/DATA_SCHEMA.md), [REA-Analyse](docs/ANALYSIS.md) |
@@ -42,6 +45,7 @@ kompatibel. Name und Branding sind bewusst andere.
 > - App aufs iPhone und Agent auf dem Mac (Claude Code): [`docs/MAC_START.md`](docs/MAC_START.md)
 > - Agent rund um die Uhr auf einem kleinen Server, nutzbar mit **ChatGPT**, Claude
 >   (Browser und Apps) und Claude Code: [`docs/SERVER_START.md`](docs/SERVER_START.md)
+> - Trainings einer Garmin-Uhr (z. B. fenix 8) dazuholen: [`docs/GARMIN.md`](docs/GARMIN.md)
 
 ### 1. Bauen
 
@@ -113,8 +117,9 @@ claude mcp add --transport http healthbridge https://…/mcp/…   # Claude Code
 In ChatGPT und auf claude.ai trägst du dieselbe Adresse als eigenen Connector ein.
 
 MCP-Tools: `health_summary`, `health_metric_series`, `health_workouts`,
-`health_list_metrics`, `health_status`, `health_sync`. Details stehen unter
-[`integrations/`](integrations/).
+`health_list_metrics`, `health_status`, `health_sync` (Apple Health) sowie
+`training_activities`, `training_activity`, `training_load`, `training_records`
+(Garmin-Trainings). Details stehen unter [`integrations/`](integrations/).
 
 ## CLI-Übersicht
 
@@ -132,10 +137,17 @@ MCP-Tools: `health_summary`, `health_metric_series`, `health_workouts`,
 | `export [--format csv\|ndjson]` | Rohdaten-Export |
 | `unlink [--delete-relay-account]` | iPhone entkoppeln (lokale Daten bleiben erhalten) |
 | `mcp` | MCP-Server über stdio |
-| `serve [--addr :8788] [--fetch-every 15m]` | Dienst: holt regelmäßig ab und beantwortet MCP über HTTP unter `/mcp/<geheim>` |
-| `connector-url [--public-url URL] [--rotate]` | geheime Connector-Adresse für `serve` anzeigen bzw. neu erzeugen |
+| `serve [--addr :8788] [--fetch-every 15m]` | Dienst: holt regelmäßig ab, beantwortet MCP über HTTP unter `/mcp/<geheim>` und nimmt Garmin-Dateien unter `/upload/<geheim>` an |
+| `connector-url [--public-url URL] [--rotate] [--upload]` | geheime Connector-Adresse für `serve` anzeigen bzw. neu erzeugen; `--upload`: Adresse der Upload-Seite für Garmin-Dateien |
+| `import [--json] DATEI_ODER_ORDNER…` | Garmin-Trainings importieren: `.fit`, `.fit.gz`, ZIP aus Garmin Connect, Konto-Export (auch verschachtelt), Ordner |
+| `activities [--days 30] [--kind run\|bike\|strength\|hyrox\|…]` | importierte Trainings mit Pace, Leistung, Puls, Belastung, Training Effect |
+| `activity [ID\|latest] [--kind K] [--samples SEK]` | Einzelanalyse: Runden, Zonen, Bestleistungen, Entkopplung, Kraftsätze, HYROX |
+| `training [--days 84]` | Wochenumfang, akute/chronische Belastung, Fitness/Form, Intensitätsverteilung |
+| `records [--days 365]` | persönliche Rekorde (Zeiten, Watt, 1RM, HYROX) |
+| `delete-activity [--samples] [ID…]` | importierte Trainings löschen |
 | `self-test` | Offline-Selbsttest |
 | `dev simulate-device` | simuliertes iPhone mit synthetischen Daten |
+| `dev sample-fit --out ORDNER` | drei synthetische Garmin-Trainings (Lauf, Kraft, HYROX) zum Ausprobieren |
 
 Der Zustand liegt in `~/.healthbridge` (alternativ `$HEALTHBRIDGE_HOME` oder
 `--state-dir`). Verzeichnisse haben die Rechte `0700`, Dateien `0600`. Private
@@ -158,8 +170,12 @@ solltest du die Festplattenverschlüsselung aktivieren.
   und jede Ausgabe ist als Daten, nicht als Anweisung, gekennzeichnet.
 * **Server-Modus (`serve`):** Der Agent entschlüsselt dann auf dem eigenen Server statt
   auf dem eigenen Rechner. Die Connector-Adresse enthält ein 256-Bit-Geheimnis und ist
-  der einzige Zugangsschutz (nur lesend). Sie wird nicht protokolliert und lässt sich
-  mit `connector-url --rotate` sofort ersetzen.
+  der einzige Zugangsschutz. Über `/mcp/` lassen sich Daten nur lesen, über die
+  Upload-Seite (`/upload/`, gleiches Geheimnis) zusätzlich Trainings hinzufügen, aber
+  nichts ändern oder löschen. Das Geheimnis wird nicht protokolliert und lässt sich mit
+  `connector-url --rotate` sofort ersetzen.
+* **Garmin-Dateien:** Die Originaldateien (mit GPS-Strecke) bleiben auf dem Rechner bzw.
+  Server des Agenten. Die Werkzeuge geben nie GPS-Positionen aus.
 * **Kein Medizinprodukt:** HealthBridge ist für Wellness und Automatisierung gedacht,
   nicht für Diagnosen.
 

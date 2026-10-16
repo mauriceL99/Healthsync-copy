@@ -26,7 +26,8 @@ jobs:
       - run: go run ./cmd/healthbridge self-test
   server-image:
     # Builds the server image (relay + agent) and smoke-tests it: an agent
-    # onboarded against the relay container answers MCP over HTTP.
+    # onboarded against the relay container answers MCP over HTTP and imports
+    # Garmin files through its upload page.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +53,22 @@ jobs:
           call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"health_summary","arguments":{"period":"week"}}}' | tee summary.json
           grep -q 'Health summary' summary.json
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST --data '{}' http://localhost:8788/mcp/wrong)" = 404
+      - name: Garmin upload smoke test
+        run: |
+          set -euo pipefail
+          hb() { docker run --rm --network hb -v agent:/data -e HEALTHBRIDGE_HOME=/data --entrypoint /usr/local/bin/healthbridge healthbridge:ci "$@"; }
+          mkdir samples
+          docker run --rm --user "$(id -u)" -v "$PWD/samples:/out" --entrypoint /usr/local/bin/healthbridge healthbridge:ci dev sample-fit --out /out
+          upload=$(hb connector-url --public-url http://localhost:8788 --upload)
+          curl -fsS "$upload" | grep -q 'Garmin import'
+          curl -fsS -H 'Accept: application/json' -F files=@samples/healthbridge-sample-run.fit \
+            -F files=@samples/healthbridge-sample-strength.fit -F files=@samples/healthbridge-sample-hyrox.fit "$upload" | tee upload.json
+          grep -q '"imported":3' upload.json
+          url=$(hb connector-url --public-url http://localhost:8788)
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"training_activity","arguments":{"kind":"hyrox"}}}' "$url" | tee hyrox.json
+          grep -q 'HYROX splits' hyrox.json
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8788/upload/wrong)" = 404
       - name: Logs
         if: failure()
         run: docker logs relay; docker logs agent

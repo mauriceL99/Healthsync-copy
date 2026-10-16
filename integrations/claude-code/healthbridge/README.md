@@ -4,7 +4,9 @@ This plugin adds three things to Claude Code:
 
 * the `healthbridge` MCP server (`healthbridge mcp`) with the tools `health_summary`,
   `health_metric_series`, `health_workouts`, `health_list_metrics`, `health_status`
-  and `health_sync`
+  and `health_sync` for Apple Health, and `training_activities`, `training_activity`,
+  `training_load` and `training_records` for Garmin workouts imported from watch files
+  (`healthbridge import`, see `docs/GARMIN.md`)
 * the `healthbridge` skill (pairing, rules for health data)
 * the `/health [day|week|month]` command
 

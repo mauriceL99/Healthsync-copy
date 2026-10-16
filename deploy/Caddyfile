@@ -1,10 +1,18 @@
-# Automatic HTTPS for {$HB_DOMAIN}. The secret connector path goes to the agent,
-# everything else to the relay. Caddy keeps no access log by default, so the
-# secret never lands in a log file.
+# Automatic HTTPS for {$HB_DOMAIN}. The secret connector and upload paths go
+# to the agent, everything else to the relay. Caddy keeps no access log by
+# default, so the secret never lands in a log file.
 {$HB_DOMAIN} {
 	encode gzip
 
 	handle /mcp/* {
+		reverse_proxy agent:8788
+	}
+
+	# Garmin files; a full account export can be several gigabytes.
+	handle /upload/* {
+		request_body {
+			max_size 4GB
+		}
 		reverse_proxy agent:8788
 	}
 

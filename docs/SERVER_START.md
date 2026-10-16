@@ -139,6 +139,8 @@ Agenten ein. Beim ersten Mal dauert das **5–10 Minuten**. Am Ende siehst du:
 - den **Sicherheitscode**, z. B. `F184-81AE-67D7`.
 - den **Pairing-Code** (eine lange Zeile, die mit `HB1:` beginnt).
 - die **Connector-Adresse**, z. B. `https://203-0-113-5.sslip.io/mcp/ZR9Z…`.
+- die **Upload-Adresse** für Garmin-Trainings, z. B. `https://203-0-113-5.sslip.io/upload/ZR9Z…`
+  (Anleitung: [`GARMIN.md`](GARMIN.md)). Sie ist genauso geheim wie die Connector-Adresse.
 
 Lass das Fenster offen.
 
@@ -206,7 +208,7 @@ am Computer** auf [chatgpt.com](https://chatgpt.com).
    | Authentifizierung | **Keine Authentifizierung** („No authentication“) |
 
    Den Haken bei „Ich vertraue dieser Anwendung“ setzen und auf **Erstellen** klicken.
-   ChatGPT verbindet sich und zeigt sechs Werkzeuge (health_summary, health_workouts …).
+   ChatGPT verbindet sich und zeigt zehn Werkzeuge (health_summary, training_activities …).
 6. **Benutzen:** Einen neuen Chat öffnen, auf **+** klicken, dann **Mehr** →
    **Entwicklermodus** und **HealthBridge** einschalten. Dann einfach fragen, zum
    Beispiel: *„Wie habe ich diese Woche geschlafen?“*
@@ -254,6 +256,9 @@ Code einfach nach deinen Daten fragen.
   Pulszonen?“
 - „Welche Metriken hast du überhaupt von mir?“
 
+**Garmin-Uhr?** Trainings mit Runden, Leistung, Kraftsätzen und HYROX-Abschnitten kommen
+über die Upload-Seite dazu. Anleitung: [`GARMIN.md`](GARMIN.md).
+
 ## Schritt 7: Im Alltag
 
 Alle Befehle laufen auf dem Server, also vorher `ssh root@<IP>` und
@@ -266,8 +271,10 @@ Alle Befehle laufen auf dem Server, also vorher `ssh root@<IP>` und
 | Zusammenfassung im Terminal | `./deploy/hb summary --period week` |
 | QR-Code erneut anzeigen (neues iPhone) | `./deploy/hb pairing` |
 | Connector-Adresse anzeigen | `./deploy/hb connector-url` |
-| **Neue** Connector-Adresse (alte sofort ungültig) | `./deploy/hb connector-url --rotate`, danach in ChatGPT/Claude ersetzen |
+| **Neue** Connector-Adresse (alte sofort ungültig) | `./deploy/hb connector-url --rotate`, danach in ChatGPT/Claude ersetzen; die Upload-Adresse ändert sich mit |
 | HealthBridge aktualisieren | `git pull && ./deploy/setup.sh` |
+| Upload-Adresse für Garmin-Dateien anzeigen | `./deploy/hb connector-url --upload` |
+| Garmin-Trainings ansehen | `./deploy/hb activities` · `./deploy/hb activity latest` · `./deploy/hb training` |
 | Protokolle ansehen | `docker compose -f deploy/docker-compose.yml logs --tail 50 agent` |
 
 Nach einem Neustart des Servers startet HealthBridge von selbst. Ubuntu installiert
@@ -310,6 +317,10 @@ Bewahre sie entsprechend sicher auf.
 - Die **Connector-Adresse** enthält ein langes Zufallsgeheimnis (256 Bit). Ohne sie gibt
   der Server nur „nicht gefunden“ zurück. Gib sie an niemanden weiter. Bei Verdacht
   erzeugst du mit `./deploy/hb connector-url --rotate` sofort eine neue.
-- Über die Connector-Adresse kann man Daten nur **lesen**, nicht ändern oder löschen.
+- Über die Connector-Adresse kann man Daten nur **lesen**. Über die Upload-Adresse
+  (gleiches Geheimnis) lassen sich zusätzlich Trainings hinzufügen, aber nichts ändern
+  oder löschen.
+- Garmin-Originaldateien enthalten die GPS-Strecke. Sie bleiben auf dem Server;
+  ChatGPT und Claude bekommen nie GPS-Positionen.
 - Neue Konten kann auf deinem Relay nur anlegen, wer das Relay-Token aus
   `deploy/.env` kennt.

@@ -1,6 +1,6 @@
 ---
 name: healthbridge
-description: Read the user's Apple Health data (steps, sleep, heart rate, HRV, workouts with heart-rate zones, body and vitals), synced end-to-end encrypted from their iPhone with the HealthBridge app. Use for daily or weekly health summaries, trends, workout reviews and dashboards. Also covers pairing the iPhone and fetching new data.
+description: Read the user's Apple Health data (steps, sleep, heart rate, HRV, workouts with heart-rate zones, body and vitals), synced end-to-end encrypted from their iPhone with the HealthBridge app, and their Garmin workouts imported from watch files (laps, power, running dynamics, strength sets, HYROX splits, training load, records). Use for health summaries, trends, workout and training analysis and dashboards. Also covers pairing the iPhone, fetching new data and importing Garmin files.
 ---
 
 # HealthBridge
@@ -24,6 +24,10 @@ If the `healthbridge` MCP server is connected, prefer its tools:
 | `health_list_metrics` | Supported metrics and how many days have data |
 | `health_status` | Pairing and sync status |
 | `health_sync` | Fetch new data from the relay. Call it only when the user wants fresh data |
+| `training_activities` | Garmin workouts (from imported FIT files) with pace, power, heart rate, load and training effect |
+| `training_activity` | Full analysis of one Garmin workout (`id`, or the latest of a `kind`): laps, zones, best efforts, decoupling, strength sets, HYROX splits |
+| `training_load` | Weekly volume per sport, acute:chronic load, fitness/fatigue/form, intensity distribution |
+| `training_records` | Personal bests: running times, power, estimated 1RM, HYROX |
 
 Without MCP, run the CLI. Every command accepts `--state-dir DIR`, and the default
 is `~/.healthbridge`.
@@ -37,6 +41,9 @@ is `~/.healthbridge`.
 | Structured data | add `--format json` (summary, series, workouts) |
 | Visual dashboard | `healthbridge dashboard --days 30` (writes `~/.healthbridge/dashboard.html`) |
 | Status | `healthbridge status` |
+| Import Garmin files | `healthbridge import FILE_OR_FOLDER` (.fit, .fit.gz, Garmin Connect ZIP, account export) |
+| Garmin workouts | `healthbridge activities --days 30`, `healthbridge activity latest --kind run` |
+| Training load / records | `healthbridge training --days 84`, `healthbridge records` |
 
 Metric names have the form `group.key`. Run `healthbridge metrics` to list them.
 Groups are `activity`, `heart`, `sleep`, `body`, `vitals`, `nutrition` and `mindfulness`.
@@ -55,6 +62,14 @@ Groups are `activity`, `heart`, `sleep`, `body`, `vitals`, `nutrition` and `mind
 Never print or forward the pairing code unless the user asks. It allows uploads to
 this account. `onboard --rotate` creates a new identity, and the iPhone must then pair
 again. Confirm with the user before you run it.
+
+## Garmin workouts
+
+Garmin has no data API for personal use, so the user exports the original FIT files
+(Garmin Connect → activity → ⚙ → Export Original, the watch's `GARMIN/Activity` folder
+over USB, or the account export) and imports them with `healthbridge import`, or on a
+server through the upload page (`healthbridge connector-url --upload`). Import only
+files the user names; never search their disk for files. Guide: `docs/GARMIN.md`.
 
 ## Rules for health data
 

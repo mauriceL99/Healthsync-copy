@@ -107,9 +107,11 @@ else
         --relay "https://$HB_DOMAIN" --relay-token "$HB_RELAY_REGISTRATION_TOKEN" --name "$HB_AGENT_NAME"
     first_run=1
 fi
+mkdir -p import
 compose up -d agent
 
 connector=$(compose exec -T agent /usr/local/bin/healthbridge connector-url)
+upload=$(compose exec -T agent /usr/local/bin/healthbridge connector-url --upload)
 
 say "Fertig. HealthBridge läuft auf https://$HB_DOMAIN"
 cat <<EOF
@@ -125,9 +127,16 @@ cat <<EOF
    Wo du sie in ChatGPT, Claude und Claude Code einträgst, steht Schritt für Schritt
    in docs/SERVER_START.md (Schritt 6).
 
-3. Nützlich
+3. Garmin-Trainings hochladen (im Browser öffnen, ebenfalls geheim halten):
+
+   $upload
+
+   Anleitung: docs/GARMIN.md
+
+4. Nützlich
    Status:              ./deploy/hb status
    Zusammenfassung:     ./deploy/hb summary --period week
-   Neue Geheimadresse:  ./deploy/hb connector-url --rotate
+   Neue Geheimadresse:  ./deploy/hb connector-url --rotate   (gilt auch für die Upload-Seite)
+   Garmin-Trainings:    ./deploy/hb activities
    Aktualisieren:       git pull && sudo ./deploy/setup.sh
 EOF

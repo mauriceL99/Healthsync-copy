@@ -174,6 +174,10 @@ claude mcp add healthbridge -- healthbridge mcp
 Dann zum Beispiel fragen: „Wie habe ich diese Woche geschlafen?“ oder „Vergleiche meine
 Ruhepuls-Werte mit dem Vormonat.“ Codex und andere Agenten: siehe `integrations/`.
 
+**Garmin-Uhr?** Mit `healthbridge import` kommen die Originaldateien deiner Trainings
+dazu: Runden, Leistung, Laufdynamik, Kraftsätze, HYROX-Abschnitte, Belastung und
+Rekorde. Schritt für Schritt: [`GARMIN.md`](GARMIN.md).
+
 ## 6. Für Freunde
 
 * Jeder Freund braucht einen **eigenen Agenten** (auf seinem Rechner oder einem eigenen

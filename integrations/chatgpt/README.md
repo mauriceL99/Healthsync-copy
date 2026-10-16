@@ -14,5 +14,9 @@ ChatGPT connects to it over HTTPS (MCP, Streamable HTTP).
 The URL contains a 256-bit secret and is the only credential: anyone who has it can
 read your health data. Replace it with `./deploy/hb connector-url --rotate`.
 
-All six tools are the same as for the local `healthbridge mcp`; the query tools are
-marked read-only, so ChatGPT only asks for confirmation before `health_sync`.
+All ten tools are the same as for the local `healthbridge mcp`: six for Apple Health
+(`health_*`) and four for Garmin workouts imported from watch files (`training_*`).
+The query tools are marked read-only, so ChatGPT only asks for confirmation before
+`health_sync`. Garmin files are added on the upload page,
+`./deploy/hb connector-url --upload` (guide: [`docs/GARMIN.md`](../../docs/GARMIN.md)).
+After an update that adds tools, refresh the connector in ChatGPT's settings.
