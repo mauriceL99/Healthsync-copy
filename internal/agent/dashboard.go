@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/mauriceL99/Healthsync-copy/internal/healthdata"
 )
@@ -34,7 +35,8 @@ type workoutRow struct {
 	Zones                              template.HTML
 }
 
-// Dashboard renders a self-contained HTML dashboard (no external resources).
+// Dashboard loads the window from db and renders a self-contained HTML
+// dashboard (no external resources).
 func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) {
 	days, err := db.Days(ctx, w.FromString(), w.ToString())
 	if err != nil {
@@ -44,6 +46,15 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+	loc, err := db.Location(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return renderDashboard(w, r, days, workouts, loc)
+}
+
+// renderDashboard turns loaded data into HTML; it does no I/O.
+func renderDashboard(w Window, r Report, days map[string]healthdata.Day, workouts []healthdata.Workout, loc *time.Location) ([]byte, error) {
 	dates := make([]string, 0, w.Days())
 	for d := w.From; !d.After(w.To); d = d.AddDate(0, 0, 1) {
 		dates = append(dates, d.Format("2006-01-02"))
@@ -52,7 +63,7 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 		out := make([]float64, len(dates))
 		for i, date := range dates {
 			out[i] = math.NaN()
-			if v, ok := days[date].Number(healthdata.Metric{Group: group, Key: key}); ok {
+			if v, ok := days[date].Value(group, key); ok {
 				out[i] = v
 			}
 		}
@@ -91,18 +102,26 @@ func Dashboard(ctx context.Context, db *DB, w Window, r Report) ([]byte, error) 
 			}
 		}
 	}
-	add("Steps", "steps", "bar", chartSeries{"Steps", "c1", series("activity", "steps")})
+	// metric charts one catalog metric; title and unit come from the catalog.
+	metric := func(path, kind, class string) {
+		m, ok := healthdata.Lookup(path)
+		if !ok {
+			return
+		}
+		add(m.Label, m.Unit, kind, chartSeries{m.Label, class, series(m.Group, m.Key)})
+	}
+	metric("activity.steps", "bar", "c1")
 	add("Sleep stages", "min", "stack",
 		chartSeries{"Deep", "c3", series("sleep", "deep_min")}, chartSeries{"Core", "c1", series("sleep", "core_min")},
 		chartSeries{"REM", "c2", series("sleep", "rem_min")}, chartSeries{"Awake", "c4", series("sleep", "awake_min")})
-	add("Resting heart rate", "bpm", "line", chartSeries{"Resting HR", "c4", series("heart", "resting_bpm")})
-	add("Heart rate variability (SDNN)", "ms", "line", chartSeries{"HRV", "c2", series("heart", "hrv_sdnn_ms")})
-	add("Active energy", "kcal", "bar", chartSeries{"Active energy", "c4", series("activity", "active_energy_kcal")})
-	add("Weight", "kg", "line", chartSeries{"Weight", "c3", series("body", "weight_kg")})
+	metric("heart.resting_bpm", "line", "c4")
+	metric("heart.hrv_sdnn_ms", "line", "c2")
+	metric("activity.active_energy_kcal", "bar", "c4")
+	metric("body.weight_kg", "line", "c3")
 
 	for i := len(workouts) - 1; i >= 0; i-- {
 		wk := workouts[i]
-		row := workoutRow{Date: wk.StartTime().In(db.Location(ctx)).Format("Mon 02 Jan 15:04"), Type: strings.ReplaceAll(wk.Type, "_", " "), Duration: formatDuration(workoutMinutes(wk)), Distance: "–", HR: "–"}
+		row := workoutRow{Date: wk.StartTime().In(loc).Format("Mon 02 Jan 15:04"), Type: workoutLabel(wk.Type), Duration: formatDuration(workoutMinutes(wk)), Distance: "–", HR: "–"}
 		if wk.DistanceM != nil && *wk.DistanceM > 0 {
 			row.Distance = formatNumber(*wk.DistanceM/1000, 2) + " km"
 		}
@@ -193,8 +212,9 @@ func chart(title, unit, kind string, dates []string, series []chartSeries) templ
 	step := int(math.Ceil(n / 8))
 	last := len(dates) - 1
 	for i, d := range dates {
-		// Label every step-th day plus the last one unless it would collide.
-		if i%step == 0 && (i == last || last-i >= step/2+1) || i == last {
+		// Label every step-th day and always the last day; a step-th label closer
+		// than half a step to the last one is skipped so the two do not overlap.
+		if i == last || (i%step == 0 && last-i > step/2) {
 			fmt.Fprintf(&b, `<text class="axis" x="%.1f" y="%.1f" text-anchor="middle">%s</text>`, x(i), height-6, d[5:])
 		}
 	}

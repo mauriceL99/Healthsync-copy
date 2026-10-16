@@ -176,7 +176,7 @@ Aggregation: **sum** = daily total, **avg** = daily mean of samples,
 | `heart_rate.avg_bpm`, `min_bpm`, `max_bpm` | number | 20–260 |
 | `heart_rate.recovery_1min_bpm` | number | 0–150 |
 | `heart_rate.max_reference_bpm` | number | 100–240, the maximum heart rate used for the zones |
-| `heart_rate.zones[]` | ≤ 5 | `{zone: 1–5, lower_bpm, upper_bpm, seconds (0–172 800)}` |
+| `heart_rate.zones[]` | ≤ 5 | `{zone: 1–5, lower_bpm ≥ 0, upper_bpm ≤ 260, lower ≤ upper, seconds (0–172 800)}` |
 | `heart_rate.samples[]` | ≤ 4 000 | `{t: seconds since start (0–172 800), bpm: 20–260}`, at most one sample per 5 s |
 
 Heart-rate zones use percentages of `max_reference_bpm`:

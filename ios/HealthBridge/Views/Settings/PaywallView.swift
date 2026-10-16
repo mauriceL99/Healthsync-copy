@@ -27,7 +27,7 @@ struct PaywallView: View {
                         FeatureRow(
                             symbol: "clock.arrow.2.circlepath",
                             title: "Scheduled sync",
-                            text: "Every 1, 3, 6, 12 or 24 hours in the background."
+                            text: "Every \(SyncInterval.choicesText) in the background."
                         )
                         FeatureRow(
                             symbol: "bolt.heart.fill",
@@ -36,8 +36,8 @@ struct PaywallView: View {
                         )
                         FeatureRow(
                             symbol: "calendar",
-                            title: "Up to 365 days of history",
-                            text: "Import a full year instead of the last 7 days."
+                            title: "Up to \(HistoryWindow.proLimit.title) of history",
+                            text: "Import up to \(HistoryWindow.proLimit.title) instead of the last \(HistoryWindow.freeLimit.title)."
                         )
                         FeatureRow(
                             symbol: "waveform.path.ecg",

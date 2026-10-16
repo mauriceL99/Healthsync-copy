@@ -20,6 +20,11 @@ import (
 	"github.com/mauriceL99/Healthsync-copy/internal/protocol"
 )
 
+// maxResponseBytes bounds a relay response. A fetch page carries at most about
+// 32 MiB of ciphertext (relay MaxFetchBytes); base64 and JSON framing add about a
+// third, so 96 MiB leaves headroom without letting a broken relay exhaust memory.
+const maxResponseBytes = 96 << 20
+
 // APIError is an error response from the relay.
 type APIError struct {
 	Status  int
@@ -74,6 +79,11 @@ func (c *Client) WithKey(key string) *Client {
 
 // Do sends a signed JSON request and decodes the JSON response into out.
 func (c *Client) Do(ctx context.Context, method, pathAndQuery string, in, out any) error {
+	return c.do(ctx, method, pathAndQuery, in, out, nil)
+}
+
+// do is Do with extra request headers (for the one route that needs them).
+func (c *Client) do(ctx context.Context, method, pathAndQuery string, in, out any, header http.Header) error {
 	var body []byte
 	if in != nil {
 		var err error
@@ -90,8 +100,10 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, in, out an
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "healthbridge-cli")
-	if c.RegistrationToken != "" && pathAndQuery == "/v1/accounts" {
-		req.Header.Set("HB-Registration-Token", c.RegistrationToken)
+	for name, values := range header {
+		for _, v := range values {
+			req.Header.Add(name, v)
+		}
 	}
 	protocol.Sign(c.priv, method, c.base.Path+pathAndQuery, c.key, body, c.Now(), protocol.NewNonce()).Apply(req)
 	resp, err := c.http.Do(req)
@@ -99,7 +111,7 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, in, out an
 		return fmt.Errorf("relay request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 96<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return err
 	}
@@ -116,7 +128,7 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, in, out an
 		return nil
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return errors.New("relay returned invalid JSON")
+		return fmt.Errorf("relay returned an unexpected response: %w", err)
 	}
 	return nil
 }
@@ -165,9 +177,13 @@ func (c *Client) RegisterAccount(ctx context.Context, account string, sig, enc [
 	var out struct {
 		Created bool `json:"created"`
 	}
-	err := c.Do(ctx, http.MethodPost, "/v1/accounts", map[string]string{
+	header := http.Header{}
+	if c.RegistrationToken != "" {
+		header.Set("HB-Registration-Token", c.RegistrationToken)
+	}
+	err := c.do(ctx, http.MethodPost, "/v1/accounts", map[string]string{
 		"account": account, "sig": protocol.B64(sig), "enc": protocol.B64(enc), "pairing_hash": pairingHash, "name": name,
-	}, &out)
+	}, &out, header)
 	return out.Created, err
 }
 
@@ -208,14 +224,24 @@ func (c *Client) DeleteAccount(ctx context.Context) error {
 	return c.Do(ctx, http.MethodDelete, "/v1/accounts/self", nil, nil)
 }
 
+// DeviceLink is the body of POST /v1/devices.
+type DeviceLink struct {
+	Account    string
+	Secret     []byte // pairing secret from the pairing code
+	DeviceSig  []byte // the new device's Ed25519 public key
+	Name       string
+	Platform   string
+	AppVersion string
+}
+
 // LinkDevice registers a device with a pairing secret (key must be new-device).
-func (c *Client) LinkDevice(ctx context.Context, account string, secret, deviceSig []byte, name, platform, appVersion string) (string, error) {
+func (c *Client) LinkDevice(ctx context.Context, l DeviceLink) (string, error) {
 	var out struct {
 		DeviceID string `json:"device_id"`
 	}
 	err := c.Do(ctx, http.MethodPost, "/v1/devices", map[string]string{
-		"account": account, "secret": protocol.B64U(secret), "device_sig": protocol.B64(deviceSig),
-		"device_name": name, "platform": platform, "app_version": appVersion,
+		"account": l.Account, "secret": protocol.B64U(l.Secret), "device_sig": protocol.B64(l.DeviceSig),
+		"device_name": l.Name, "platform": l.Platform, "app_version": l.AppVersion,
 	}, &out)
 	return out.DeviceID, err
 }

@@ -4,31 +4,28 @@ import StoreKit
 
 enum PurchaseError: LocalizedError {
     case failedVerification
-    case productUnavailable
 
     var errorDescription: String? {
         switch self {
         case .failedVerification:
             return "The App Store could not verify the purchase."
-        case .productUnavailable:
-            return "This product is not available right now."
         }
     }
 }
 
 /// StoreKit 2 purchases for "HealthBridge Pro".
 ///
-/// Free: manual sync and the last 7 days of history.
-/// Pro: scheduled and on-new-data background sync, up to 365 days of history and workout
-/// heart-rate details.
+/// Free: manual sync and `HistoryWindow.freeLimit` of history.
+/// Pro: scheduled and on-new-data background sync, up to `HistoryWindow.proLimit` of history
+/// and workout heart-rate details.
+///
+/// Only the store edition sells Pro (`AppEdition.sellsPro`). The personal edition is always
+/// Pro and never contacts the App Store.
 @MainActor
 final class PurchaseManager: ObservableObject {
-    nonisolated static let lifetimeProductID = "com.example.healthbridge.pro.lifetime"
-    nonisolated static let yearlyProductID = "com.example.healthbridge.pro.yearly"
-    nonisolated static let productIDs: Set<String> = [
-        "com.example.healthbridge.pro.lifetime",
-        "com.example.healthbridge.pro.yearly",
-    ]
+    nonisolated static let lifetimeProductID = AppIdentifiers.proLifetimeProduct
+    nonisolated static let yearlyProductID = AppIdentifiers.proYearlyProduct
+    nonisolated static let productIDs: Set<String> = [lifetimeProductID, yearlyProductID]
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var isPro: Bool
@@ -39,6 +36,10 @@ final class PurchaseManager: ObservableObject {
     private var updatesTask: Task<Void, Never>?
 
     init() {
+        guard AppEdition.sellsPro else {
+            isPro = true
+            return
+        }
         isPro = EntitlementCache.isPro
         updatesTask = Task.detached(priority: .background) { [weak self] in
             for await result in Transaction.updates {
@@ -70,7 +71,7 @@ final class PurchaseManager: ObservableObject {
             let loaded = try await Product.products(for: Self.productIDs)
             products = loaded.sorted { $0.price < $1.price }
         } catch {
-            lastError = "Could not load products from the App Store."
+            lastError = "Could not load products from the App Store: \(error.localizedDescription)"
         }
     }
 
@@ -96,7 +97,7 @@ final class PurchaseManager: ObservableObject {
                 return false
             }
         } catch {
-            lastError = (error as? LocalizedError)?.errorDescription ?? "The purchase failed."
+            lastError = "The purchase failed: \(error.localizedDescription)"
             return false
         }
     }
@@ -105,7 +106,7 @@ final class PurchaseManager: ObservableObject {
         do {
             try await AppStore.sync()
         } catch {
-            lastError = "Restoring purchases failed. Check that you are signed in to the App Store."
+            lastError = "Restoring purchases failed (\(error.localizedDescription)). Check that you are signed in to the App Store."
         }
         await refreshEntitlements()
     }
@@ -118,6 +119,7 @@ final class PurchaseManager: ObservableObject {
 
     /// Checks `Transaction.currentEntitlements`; usable from background tasks.
     nonisolated static func verifiedProEntitlement() async -> Bool {
+        guard AppEdition.sellsPro else { return true }
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
                   productIDs.contains(transaction.productID),

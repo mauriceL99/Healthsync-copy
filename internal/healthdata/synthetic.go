@@ -40,8 +40,8 @@ func Synthetic(end time.Time, days int, loc *time.Location, seed int64) map[stri
 			"activity": map[string]any{
 				"steps":                      math.Round(steps),
 				"distance_walking_running_m": math.Round(steps * 0.76),
-				"active_energy_kcal":         round(active, 1),
-				"basal_energy_kcal":          round(1680+r.NormFloat64()*20, 1),
+				"active_energy_kcal":         Round(active, 1),
+				"basal_energy_kcal":          Round(1680+r.NormFloat64()*20, 1),
 				"flights_climbed":            math.Round(math.Max(0, 8+r.NormFloat64()*5)),
 				"exercise_min":               math.Round(math.Max(0, 28+r.NormFloat64()*15)),
 				"stand_min":                  math.Round(math.Max(0, 120+r.NormFloat64()*30)),
@@ -51,23 +51,23 @@ func Synthetic(end time.Time, days int, loc *time.Location, seed int64) map[stri
 				"stand_goal_hours":           12,
 			},
 			"heart": map[string]any{
-				"resting_bpm":      round(56+r.NormFloat64()*2.5, 1),
-				"walking_avg_bpm":  round(95+r.NormFloat64()*4, 1),
-				"avg_bpm":          round(72+r.NormFloat64()*4, 1),
+				"resting_bpm":      Round(56+r.NormFloat64()*2.5, 1),
+				"walking_avg_bpm":  Round(95+r.NormFloat64()*4, 1),
+				"avg_bpm":          Round(72+r.NormFloat64()*4, 1),
 				"min_bpm":          math.Round(48 + r.Float64()*6),
 				"max_bpm":          math.Round(130 + r.Float64()*45),
-				"hrv_sdnn_ms":      round(48+r.NormFloat64()*8, 1),
-				"vo2max_ml_kg_min": round(vo2, 1),
+				"hrv_sdnn_ms":      Round(48+r.NormFloat64()*8, 1),
+				"vo2max_ml_kg_min": Round(vo2, 1),
 			},
 			"sleep": map[string]any{
-				"in_bed_min": round(asleep+awake+8, 1), "asleep_min": round(asleep, 1),
-				"core_min": round(core, 1), "deep_min": round(deep, 1), "rem_min": round(rem, 1), "awake_min": round(awake, 1),
+				"in_bed_min": Round(asleep+awake+8, 1), "asleep_min": Round(asleep, 1),
+				"core_min": Round(core, 1), "deep_min": Round(deep, 1), "rem_min": Round(rem, 1), "awake_min": Round(awake, 1),
 				"bedtime":   bed.UTC().Format(time.RFC3339),
 				"wake_time": wake.UTC().Format(time.RFC3339),
 				"sessions":  syntheticSessions(bed, deep, core, rem, awake),
 			},
-			"body":        map[string]any{"weight_kg": round(weight, 1), "body_fat_pct": round(18+r.NormFloat64()*0.3, 1)},
-			"vitals":      map[string]any{"respiratory_rate_bpm": round(14+r.NormFloat64()*0.6, 1), "oxygen_saturation_pct": round(97+r.NormFloat64()*0.8, 1), "sleeping_wrist_temperature_c": round(35.6+r.NormFloat64()*0.2, 2)},
+			"body":        map[string]any{"weight_kg": Round(weight, 1), "body_fat_pct": Round(18+r.NormFloat64()*0.3, 1)},
+			"vitals":      map[string]any{"respiratory_rate_bpm": Round(14+r.NormFloat64()*0.6, 1), "oxygen_saturation_pct": Round(97+r.NormFloat64()*0.8, 1), "sleeping_wrist_temperature_c": Round(35.6+r.NormFloat64()*0.2, 2)},
 			"nutrition":   map[string]any{"water_ml": math.Round(1800 + r.Float64()*800), "caffeine_mg": math.Round(r.Float64() * 240)},
 			"mindfulness": map[string]any{"mindful_min": math.Round(r.Float64() * 15)},
 		}
@@ -130,7 +130,7 @@ func syntheticWorkout(r *rand.Rand, day time.Time, i int, weekend bool) map[stri
 	end := start.Add(time.Duration(minutes * float64(time.Minute)))
 	maxRef := 190.0
 	var samples []any
-	zones := make([]float64, 5)
+	zones := make([]float64, HeartRateZones)
 	minB, maxB, sum := 300.0, 0.0, 0.0
 	n := 0
 	for t := 0.0; t <= minutes*60; t += 5 {
@@ -141,13 +141,13 @@ func syntheticWorkout(r *rand.Rand, day time.Time, i int, weekend bool) map[stri
 		pct := bpm / maxRef
 		zone := int(math.Floor((pct - 0.5) / 0.1))
 		if zone >= 0 {
-			zones[min(zone, 4)] += 5
+			zones[min(zone, HeartRateZones-1)] += 5
 		}
 		minB, maxB, sum = math.Min(minB, bpm), math.Max(maxB, bpm), sum+bpm
 		n++
 	}
 	var zoneList []any
-	for z := 0; z < 5; z++ {
+	for z := 0; z < HeartRateZones; z++ {
 		lo := maxRef * (0.5 + 0.1*float64(z))
 		zoneList = append(zoneList, map[string]any{"zone": z + 1, "lower_bpm": math.Round(lo), "upper_bpm": math.Round(lo + maxRef*0.1), "seconds": zones[z]})
 	}
@@ -157,11 +157,11 @@ func syntheticWorkout(r *rand.Rand, day time.Time, i int, weekend bool) map[stri
 		"start":       start.UTC().Format(time.RFC3339),
 		"end":         end.UTC().Format(time.RFC3339),
 		"duration_s":  math.Round(minutes * 60),
-		"energy_kcal": round(minutes*k.kcalRate, 1),
+		"energy_kcal": Round(minutes*k.kcalRate, 1),
 		"indoor":      k.indoor,
 		"source":      "HealthBridge Simulator",
 		"heart_rate": map[string]any{
-			"avg_bpm": round(sum/float64(n), 1), "min_bpm": minB, "max_bpm": maxB,
+			"avg_bpm": Round(sum/float64(n), 1), "min_bpm": minB, "max_bpm": maxB,
 			"recovery_1min_bpm": math.Round(22 + r.Float64()*15), "max_reference_bpm": maxRef,
 			"zones": zoneList, "samples": samples,
 		},

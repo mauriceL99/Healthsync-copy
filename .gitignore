@@ -11,3 +11,11 @@ ios/*.xcodeproj/
 ios/**/xcuserdata/
 ios/DerivedData/
 .DS_Store
+
+# Personal signing values written by ios/setup.sh
+ios/Configuration/Local.xcconfig
+
+# Server settings written by deploy/setup.sh (contains the relay token)
+deploy/.env
+# Garmin files copied onto the server for import
+deploy/import/

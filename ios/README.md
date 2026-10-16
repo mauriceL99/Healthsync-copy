@@ -16,12 +16,15 @@ Requests, Relay-API, Envelope-Verschlüsselung) und
 
 * macOS mit **Xcode 15.3** oder neuer (iOS-17-SDK, Swift 5.10), besser Xcode 16
 * [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-* Ein Apple-Developer-Account (HealthKit funktioniert nur mit Signierung; für
-  Background Delivery und In-App-Käufe ist ein bezahlter Account nötig)
+* Eine Apple-ID zum Signieren. Für das eigene iPhone genügt eine kostenlose (App läuft
+  dann 7 Tage). TestFlight und die Store-Edition brauchen das Developer Program.
+  Unterschiede: [`docs/MAC_START.md`](../docs/MAC_START.md)
 * Ein echtes iPhone für HealthKit-Tests (der Simulator hat keine echten Health-Daten
   und keine Kamera)
 
 ## Projekt erzeugen
+
+Am einfachsten mit `./setup.sh` (siehe „Signierung und Team“). Von Hand:
 
 ```bash
 brew install xcodegen
@@ -40,25 +43,32 @@ Projekteinstellungen (aus `project.yml`):
 | Targets | `HealthBridge` (App), `HealthBridgeTests` (Unit-Tests) |
 | Deployment Target | iOS 17.0, nur iPhone |
 | Swift | Swift-5-Sprachmodus, `SWIFT_STRICT_CONCURRENCY = minimal` |
-| Bundle-ID | `com.example.healthbridge` (**Platzhalter**) |
+| Bundle-ID | `<HB_BUNDLE_ID_PREFIX>.healthbridge`, Präfix aus `Configuration/Local.xcconfig` (Standard `com.example`) |
+| Edition | persönlich (Standard, alles freigeschaltet) oder Store (`STORE_EDITION`, siehe unten) |
 | Info.plist | `HealthBridge/Info.plist` (von Hand gepflegt, nicht generiert) |
 | Entitlements | `HealthBridge/HealthBridge.entitlements` |
 | StoreKit-Konfiguration | `Configuration/Products.storekit` (im Scheme hinterlegt) |
 
 ## Signierung und Team
 
-1. In `project.yml` `DEVELOPMENT_TEAM` auf die eigene Team-ID setzen (oder in Xcode
-   unter *Signing & Capabilities* das Team wählen).
-2. Die Platzhalter-Bundle-ID `com.example.healthbridge` durch eine eigene ersetzen,
-   z. B. `de.meinname.healthbridge`. Dabei **konsistent** ändern:
-   * `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` (App und Tests)
-   * `BGTaskSchedulerPermittedIdentifiers` in `Info.plist` und `BackgroundTaskID`
-     in `HealthBridge/Sync/BackgroundSync.swift`
-   * Produkt-IDs in `HealthBridge/Store/PurchaseManager.swift`,
-     `Configuration/Products.storekit` und App Store Connect
-   * Keychain-Service in `HealthBridge/Security/KeychainStore.swift` (optional)
-3. Automatische Signierung legt die App-ID mit den Capabilities aus der
-   Entitlements-Datei an.
+Auf dem Mac genügt einmal:
+
+```bash
+cd ios
+./setup.sh
+```
+
+Das Skript fragt Team-ID (wird aus dem Zertifikat „Apple Development“ erkannt) und
+Bundle-ID-Präfix ab und schreibt beides nach `Configuration/Local.xcconfig` (nicht
+eingecheckt). `Configuration/Signing.xcconfig` bindet diese Datei ein. Danach erzeugt
+das Skript das Projekt und öffnet Xcode. Schritt für Schritt inklusive iPhone, Relay
+und Claude Code: [`docs/MAC_START.md`](../docs/MAC_START.md).
+
+Aus der Bundle-ID leitet die App ab (`HealthBridge/App/AppIdentifiers.swift`):
+Hintergrund-Tasks (`<bundle-id>.refresh`/`.backfill`, auch in `Info.plist`),
+Keychain-Service und Produkt-IDs (`<bundle-id>.pro.lifetime`/`.pro.yearly`).
+Automatische Signierung legt die App-ID mit den Capabilities aus der
+Entitlements-Datei an.
 
 ## Capabilities
 
@@ -87,8 +97,8 @@ locked“ ab und läuft beim nächsten Mal erneut.
 
 | Identifier | Typ | Zweck |
 | --- | --- | --- |
-| `com.example.healthbridge.refresh` | `BGAppRefreshTask` | Modus „Geplant“ (1/3/6/12/24 h) und Sicherheitsnetz im Modus „Bei neuen Daten“ |
-| `com.example.healthbridge.backfill` | `BGProcessingTask` | Fortsetzen eines unterbrochenen Verlaufs-Imports |
+| `<bundle-id>.refresh` | `BGAppRefreshTask` | Modus „Geplant“ (1/3/6/12/24 h) und Sicherheitsnetz im Modus „Bei neuen Daten“ |
+| `<bundle-id>.backfill` | `BGProcessingTask` | Fortsetzen eines unterbrochenen Verlaufs-Imports |
 
 iOS entscheidet selbst, wann ein Hintergrund-Task tatsächlich läuft. Der eingestellte
 Abstand ist nur ein Mindestabstand. Zum Testen im Debugger (App pausieren, dann in der
@@ -108,26 +118,53 @@ erfolgreichen Sync wird erneut synchronisiert.
 `NSCameraUsageDescription` für den QR-Scanner (VisionKit `DataScannerViewController`).
 Ohne Kamera kann der Pairing-Code (`HB1:…`) eingefügt werden.
 
-## StoreKit testen
+## Editionen
 
-Das Scheme verweist auf `Configuration/Products.storekit`. Damit funktionieren Käufe
-im Simulator und auf dem Gerät ohne App Store Connect:
+| | Persönlich (Standard) | Store (`STORE_EDITION`) |
+| --- | --- | --- |
+| Gedacht für | eigenes iPhone, Freunde, TestFlight | App Store |
+| Funktionen | alles freigeschaltet | Kostenlos/Pro wie unten |
+| App-Store-Kontakt | keiner (kein StoreKit-Aufruf) | StoreKit 2 |
+| Pro-Bereich in Settings, Paywall | ausgeblendet | sichtbar |
+| Apple-Konto | kostenlose Apple-ID genügt | Developer Program |
 
-| Produkt-ID | Typ |
+Die CI baut beide Editionen, damit der StoreKit-Code nicht unbemerkt veraltet.
+
+### Store-Edition
+
+1. In `project.yml` beim Target `HealthBridge` ergänzen:
+   ```yaml
+   settings:
+     base:
+       SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) STORE_EDITION
+   attributes:
+     SystemCapabilities:
+       com.apple.InAppPurchase:
+         enabled: 1
+   ```
+2. Produkt-IDs in `Configuration/Products.storekit` und App Store Connect auf
+   `<bundle-id>.pro.lifetime` / `<bundle-id>.pro.yearly` setzen.
+3. `xcodegen` ausführen.
+
+Das Scheme verweist auf `Configuration/Products.storekit`. Damit funktionieren Käufe der
+Store-Edition im Simulator und auf dem Gerät ohne App Store Connect:
+
+| Produkt-ID (Platzhalter-Präfix) | Typ |
 | --- | --- |
 | `com.example.healthbridge.pro.lifetime` | Non-Consumable |
 | `com.example.healthbridge.pro.yearly` | Auto-Renewable (Gruppe „HealthBridge Pro“, 1 Woche gratis) |
 
 *Debug › StoreKit › Manage Transactions…* zeigt die Testkäufe; dort lassen sich Käufe
-löschen, erstatten oder Verlängerungen beschleunigen. Für TestFlight und den App
-Store müssen dieselben Produkte in App Store Connect angelegt werden.
+löschen, erstatten oder Verlängerungen beschleunigen.
 
-| | Kostenlos | Pro |
+| Store-Edition | Kostenlos | Pro |
 | --- | --- | --- |
 | Manueller Sync | ✓ | ✓ |
 | Geplanter Sync / Sync bei neuen Daten | – | ✓ |
 | Verlauf | 7 Tage | bis 365 Tage |
 | Workout-Herzfrequenzdetails (Zonen, Kurve, Erholung) | – | ✓ |
+
+Store-Texte, Datenschutz-Entwurf und App-Privacy-Angaben: [`docs/store/`](../docs/store/).
 
 ## Gegen ein lokales Relay testen
 
@@ -209,34 +246,29 @@ nach dem Koppeln nicht gespeichert. Nach einer Neuinstallation wird der alte
 Pairing-Datensatz verworfen, der Geräteschlüssel bleibt erhalten – erneutes Koppeln mit
 demselben QR-Code ist dadurch auf dem Relay idempotent. „Entkoppeln“ ruft
 `DELETE /v1/devices/self` auf und löscht alle Keychain-Einträge. Meldet das Relay
-`410 device_unlinked`, kehrt die App in den ungekoppelten Zustand zurück.
+`410 device_unlinked`, kehrt die App in den ungekoppelten Zustand zurück. `401
+unknown_device` (z. B. nach einem Relay-Reset) entkoppelt dagegen nicht still: Der Sync
+schlägt mit einem Hinweis fehl, und der Nutzer entscheidet, ob er neu koppelt.
 
 ## Hinweise für das App-Review
 
-* **HealthKit-Nutzung:** Die App liest Health-Daten ausschließlich, um sie auf
-  ausdrücklichen Wunsch des Nutzers verschlüsselt an dessen eigenen Agent zu senden.
-  Keine Werbung, kein Verkauf, keine Analyse-SDKs, keine Speicherung von Health-Daten
-  in iCloud. Das muss so auch in der Datenschutzerklärung und den App-Privacy-Angaben
-  („Health & Fitness“, nicht zum Tracking verwendet) stehen.
-* **Datenschutzerklärung:** Für HealthKit-Apps zwingend (URL in App Store Connect und
-  idealerweise in der App). Sie muss das Relay (Betreiber, Speicherdauer max. 30 Tage
-  bzw. bis zum Abholen, nur Chiffretext) beschreiben.
-* **Review-Zugang:** Das Review-Team braucht einen funktionierenden Agent/Relay. Am
-  einfachsten einen Pairing-Code eines Test-Agents in den Review-Notes hinterlegen
-  (Code einfügen statt scannen) und erklären, dass es sich um ein
-  Entwickler-/Automatisierungswerkzeug handelt.
-* **Kein Medizinprodukt:** Der Hinweis steht im Onboarding und in den Einstellungen.
-  Die Store-Beschreibung sollte keine medizinischen Versprechen machen.
-* **Export Compliance:** Die App verwendet Verschlüsselung (CryptoKit:
-  X25519, HKDF, ChaCha20-Poly1305, Ed25519) über HTTPS hinaus. `ITSAppUsesNonExemptEncryption`
-  ist deshalb bewusst **nicht** in `Info.plist` gesetzt – App Store Connect fragt beim
-  Upload danach. Die Verschlüsselung dient dem Schutz von Nutzerdaten und nutzt nur
-  Standardalgorithmen der Betriebssystem-Frameworks; je nach Einordnung fällt das unter
-  die Ausnahmen der EAR (Kategorie 5 Teil 2), ggf. ist eine Selbstklassifizierung
-  (Annual Self-Classification Report) einzureichen. Das bitte vor der Veröffentlichung
-  rechtlich prüfen und dann die Frage in App Store Connect bzw. den Info.plist-Schlüssel
-  passend setzen.
-* **App-Icon:** `Assets.xcassets/AppIcon.appiconset` enthält nur die Slots
-  (1024×1024, hell/dunkel/getönt). Vor dem Upload ein Icon ergänzen.
+Für die Eigennutzung nicht nötig. Für TestFlight oder den App Store liegen Entwürfe in
+[`docs/store/`](../docs/store/):
+- Datenschutzerklärung (DE/EN)
+- App-Privacy-Angaben
+- Store-Texte
+- Prüfnotizen mit Demo-Pairing-Code
+- Klärung der Verschlüsselungs-Exportfrage (`ITSAppUsesNonExemptEncryption` ist bewusst
+  nicht gesetzt)
+
+Die Datenschutzerklärung wird nur als URL hinterlegt, nicht in die App eingebaut.
+
+* **HealthKit-Nutzung:** Die App liest Health-Daten nur, um sie auf Wunsch des Nutzers
+  verschlüsselt an dessen eigenen Agenten zu senden. Keine Werbung, kein Verkauf, keine
+  Analyse-SDKs, keine Health-Daten in iCloud (Guideline 5.1.3).
+* **Kein Medizinprodukt:** Der Hinweis steht im Onboarding und in den Einstellungen. Die
+  Store-Beschreibung macht keine medizinischen Versprechen.
+* **App-Icon:** `Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png` (1024 px,
+  ohne Alpha) erzeugt `scripts/make-app-icon.py`.
 * **Name:** Die App heißt „HealthBridge“ und verwendet weder Namen noch Branding des
   Originals.

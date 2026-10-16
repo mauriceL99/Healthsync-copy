@@ -16,13 +16,17 @@ struct HeartRateZoneBound: Equatable, Sendable {
 enum HeartRateAnalyzer {
     static let validRange: ClosedRange<Double> = 20...260
     static let maxSamples = 4_000
+    /// Longest accepted workout: 48 h (docs/DATA_SCHEMA.md, `duration_s` and `t`).
+    static let maxWorkoutSeconds: Double = 172_800
     static let minSampleSpacing = 5
     /// Gaps longer than this between two readings are not attributed to a zone.
     static let maxGapForZones: TimeInterval = 30
     static let zonePercentages: [Double] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
     /// `max_reference_bpm`: 220 − age if known, otherwise the highest heart rate observed in
-    /// the last 365 days, otherwise 190. Always clamped to 100–240.
+    /// the last 365 days, otherwise 190. Age- and observation-based values are clamped to
+    /// 100–240; an observed maximum below 100 bpm is ignored (it only shows that no hard
+    /// effort was recorded, not the real maximum), so 190 is used instead.
     static func maxReference(age: Int?, observedMax: Double?) -> Double {
         if let age, age > 0, age < 120 {
             return clampReference(Double(220 - age))
@@ -94,7 +98,7 @@ enum HeartRateAnalyzer {
                 zone: bound.zone,
                 lowerBpm: bound.lower,
                 upperBpm: bound.upper,
-                seconds: min(seconds[bound.zone - 1].rounded(), 172_800)
+                seconds: min(seconds[bound.zone - 1].rounded(), Self.maxWorkoutSeconds)
             )
         }
     }
@@ -112,7 +116,7 @@ enum HeartRateAnalyzer {
         var sums: [Int: (total: Double, count: Int)] = [:]
         for point in points {
             let offset = point.date.timeIntervalSince(start)
-            guard offset >= 0, offset <= min(duration, 172_800) else { continue }
+            guard offset >= 0, offset <= min(duration, Self.maxWorkoutSeconds) else { continue }
             let bucket = Int(offset) / bucketSize
             let current = sums[bucket] ?? (total: 0, count: 0)
             sums[bucket] = (total: current.total + point.bpm, count: current.count + 1)
@@ -126,12 +130,25 @@ enum HeartRateAnalyzer {
         return Array(samples.prefix(maxSamples))
     }
 
+    /// Recovery readings are not sampled at fixed times, so both come from tolerance windows:
+    /// the end value is the last reading in the final `recoveryEndWindow` of the workout, the
+    /// one-minute value is the reading closest to end + `recoveryDelay` within
+    /// `recoveryTargetWindow` (wider after the target: a slightly late reading still shows
+    /// the recovery, an early one mostly shows the workout).
+    static let recoveryEndWindow: TimeInterval = 30
+    static let recoveryDelay: TimeInterval = 60
+    static let recoveryTargetWindow: ClosedRange<TimeInterval> = -15...20
+    /// How far past the workout end heart-rate samples are read, so the recovery reading is
+    /// included (10 s margin beyond the latest accepted reading).
+    static let samplesAfterEnd: TimeInterval = recoveryDelay + recoveryTargetWindow.upperBound + 10
+
     /// Heart rate at the end of the workout minus heart rate one minute later.
     static func recovery(points: [HeartRatePoint], end: Date) -> Double? {
-        let atEnd = points.last(where: { $0.date <= end && $0.date >= end.addingTimeInterval(-30) })
-        let target = end.addingTimeInterval(60)
+        let atEnd = points.last(where: { $0.date <= end && $0.date >= end.addingTimeInterval(-recoveryEndWindow) })
+        let target = end.addingTimeInterval(recoveryDelay)
         let afterCandidates = points.filter {
-            $0.date >= target.addingTimeInterval(-15) && $0.date <= target.addingTimeInterval(20)
+            $0.date >= target.addingTimeInterval(recoveryTargetWindow.lowerBound)
+                && $0.date <= target.addingTimeInterval(recoveryTargetWindow.upperBound)
         }
         let after = afterCandidates.min(by: {
             abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target))

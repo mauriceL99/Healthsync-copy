@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 struct SyncProgress: Equatable, Sendable {
     var completed: Int
@@ -21,6 +22,16 @@ struct SyncReport: Equatable, Sendable {
     var ciphertextBytes: Int
     var dayCount: Int
     var finishedAt: Date
+    /// HealthKit reads that failed and were left out of the upload (see `HealthBatchBuilder`).
+    var skippedReads: Int = 0
+}
+
+/// What `SyncEngine.unpair()` managed to do.
+struct UnpairResult: Equatable, Sendable {
+    /// The relay confirmed the unlink (or already did not know the device).
+    var reachedRelay: Bool
+    /// Set when the keychain could not be wiped; the pairing is then kept so the user can retry.
+    var localError: String?
 }
 
 enum SyncError: LocalizedError {
@@ -140,10 +151,6 @@ actor SyncEngine {
         self.log = log
     }
 
-    var running: Bool {
-        isRunning
-    }
-
     @discardableResult
     func run(
         trigger: SyncTrigger,
@@ -181,13 +188,15 @@ actor SyncEngine {
                 dayCount: report.dayCount,
                 firstDay: plan.range.dayKeys.first,
                 lastDay: plan.range.dayKeys.last,
-                duration: Date().timeIntervalSince(startedAt)
+                duration: Date().timeIntervalSince(startedAt),
+                warning: Self.skippedReadsWarning(report.skippedReads)
             ))
             return report
         } catch {
             let syncError = SyncError.wrap(error)
             if case .deviceUnlinked = syncError {
-                handleUnlinked()
+                // The agent unlinked this device: go back to unpaired.
+                PairingLifecycle.markUnlinkedByAgent(log: log)
             } else if case .notPaired = syncError {
                 // Nothing to record.
             } else {
@@ -204,9 +213,17 @@ actor SyncEngine {
         }
     }
 
-    /// The relay reported that the agent unlinked this device: go back to unpaired.
-    private func handleUnlinked() {
-        PairingLifecycle.markUnlinkedByAgent(log: log)
+    /// Upper bound for the JSON around an envelope's ciphertext (id, account, kind, epk,
+    /// nonce, kid, timestamps: about 350 bytes), used to keep uploads under the relay limit.
+    static let envelopeOverheadBytes = 512
+
+    /// Skipped reads are not retried automatically: they are almost always persistent
+    /// (a type this iPhone cannot query), and retrying would turn every sync into a full
+    /// history import. The user can re-send the history once the cause is fixed.
+    static func skippedReadsWarning(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        let reads = count == 1 ? "1 Health read" : "\(count) Health reads"
+        return "\(reads) failed and were left out. Use \"Send full history again\" in Settings to fill the gap."
     }
 
     private func perform(
@@ -215,7 +232,7 @@ actor SyncEngine {
         forceBackfill: Bool,
         progress: (@Sendable (SyncProgress) -> Void)?
     ) async throws -> (SyncReport, SyncPlan) {
-        guard let pairing = PairingStore.load() else { throw SyncError.notPaired }
+        guard let pairing = try PairingStore.loadRecord() else { throw SyncError.notPaired }
         guard let signingKey = try DeviceIdentityStore.loadSigningKey() else { throw SyncError.notPaired }
         guard health.isAvailable else { throw SyncError.healthUnavailable }
         let recipient = try pairing.recipientKey()
@@ -233,13 +250,13 @@ actor SyncEngine {
             forceBackfill: forceBackfill
         )
 
+        let builder = HealthBatchBuilder(health: health)
         let heartRateDetails = settings.includesHeartRateDetails(isPro: isPro)
         var options = BatchOptions(categories: settings.categories, heartRateDetails: heartRateDetails)
         if heartRateDetails {
-            options.maxReferenceBPM = await maxReferenceBPM(now: now, calendar: calendar)
+            options.maxReferenceBPM = try await builder.maxReferenceBPM(now: now, calendar: calendar)
         }
 
-        let builder = HealthBatchBuilder(health: health)
         let totalSteps = plan.chunks.count + max(1, (plan.chunks.count + HB1.maxEnvelopesPerRequest - 1) / HB1.maxEnvelopesPerRequest)
         var completedSteps = 0
         func report(_ message: String) {
@@ -268,6 +285,10 @@ actor SyncEngine {
                 ? "Reading Health data (\(index + 1) of \(plan.chunks.count))…"
                 : "Reading Health data…")
             let batch = try await builder.build(range: chunk, options: options, now: now)
+            completedSteps += 1
+            // A chunk without any data carries nothing for the agent; skipping it saves an
+            // envelope. Backfill progress is tracked by the plan, not by uploads.
+            if batch.isEmpty { continue }
             let plaintext = try batch.encodedJSON()
             report("Encrypting on this iPhone…")
             let envelope = try EnvelopeCrypto.seal(
@@ -277,8 +298,7 @@ actor SyncEngine {
                 kind: plan.kind,
                 compression: .deflate
             )
-            completedSteps += 1
-            let size = envelope.ct.utf8.count + 512
+            let size = envelope.ct.utf8.count + Self.envelopeOverheadBytes
             if !pending.isEmpty
                 && (pending.count >= HB1.maxEnvelopesPerRequest || pendingBytes + size > HB1.maxUploadBodyBytes) {
                 try await flush()
@@ -294,51 +314,56 @@ actor SyncEngine {
             envelopeCount: envelopeCount,
             ciphertextBytes: ciphertextBytes,
             dayCount: plan.range.dayCount,
-            finishedAt: Date()
+            finishedAt: Date(),
+            skippedReads: builder.skippedReads
         )
         return (result, plan)
     }
 
-    /// `220 − age`, else the highest heart rate of the last 365 days, else 190.
-    private func maxReferenceBPM(now: Date, calendar: Calendar) async -> Double {
-        let age = health.age(on: now)
-        var observedMax: Double?
-        if age == nil, let yearAgo = calendar.date(byAdding: .day, value: -365, to: now) {
-            observedMax = try? await health.maximumHeartRate(since: yearAgo)
-        }
-        return HeartRateAnalyzer.maxReference(age: age, observedMax: observedMax)
-    }
-
-    /// Unlinks this device at the relay (best effort) and wipes local pairing data.
-    /// Returns false if the relay could not be reached (local data is wiped anyway).
+    /// Unlinks this device at the relay (best effort) and wipes local pairing data. If the
+    /// relay is unreachable, local data is wiped anyway; if the wipe fails, nothing local is
+    /// reset so the user can try again.
     @discardableResult
-    func unpair() async -> Bool {
-        var reachedRelay = false
-        if let pairing = PairingStore.load(),
-           let signingKey = try? DeviceIdentityStore.loadSigningKey(),
-           let client = try? RelayClient(relay: pairing.relay) {
-            do {
+    func unpair() async -> UnpairResult {
+        var result = UnpairResult(reachedRelay: false)
+        do {
+            if let pairing = try PairingStore.loadRecord(),
+               let signingKey = try DeviceIdentityStore.loadSigningKey() {
+                let client = try RelayClient(relay: pairing.relay)
                 try await client.unlinkDevice(deviceID: pairing.deviceID, signingKey: signingKey)
-                reachedRelay = true
-            } catch RelayError.deviceUnlinked {
-                reachedRelay = true
-            } catch {
-                reachedRelay = false
+                result.reachedRelay = true
             }
+        } catch RelayError.deviceUnlinked, RelayError.deviceUnknown {
+            result.reachedRelay = true
+        } catch {
+            Log.sync.error("Unlinking at the relay failed: \(error.localizedDescription, privacy: .public)")
         }
-        KeychainStore.deleteAll()
+        do {
+            try KeychainStore.deleteAll()
+        } catch {
+            Log.storage.error("Wiping the keychain failed: \(error.localizedDescription, privacy: .public)")
+            result.localError = SyncError.wrap(error).errorDescription
+            return result
+        }
         SettingsStore.resetPairingState()
         log.append(ActivityLogEntry(date: Date(), event: .unpaired))
         NotificationCenter.default.post(name: Self.pairingDidChangeNotification, object: nil)
-        return reachedRelay
+        return result
     }
 }
 
 /// Shared handling when the agent has unlinked this iPhone (`410 device_unlinked`).
 enum PairingLifecycle {
     static func markUnlinkedByAgent(log: ActivityLogStore = .shared) {
-        guard PairingStore.isPaired else { return }
-        PairingStore.delete()
+        guard PairingStore.isPairedIfKnown() == true else { return }
+        do {
+            try PairingStore.delete()
+        } catch {
+            // Keep everything consistent and paired: the relay gives the same answer on the
+            // next request, and this runs again.
+            Log.storage.error("Removing the unlinked pairing failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         SettingsStore.resetPairingState()
         log.append(ActivityLogEntry(
             date: Date(),

@@ -117,7 +117,7 @@ func TestFetchSkipsBadEnvelopes(t *testing.T) {
 	agentKey, _ := ecdh.X25519().NewPublicKey(encPub)
 	devPub, devPriv, _ := ed25519.GenerateKey(rand.Reader)
 	c, _ := client.New(relayURL, protocol.KeyNewDevice, devPriv, 5*time.Second)
-	id, err := c.LinkDevice(ctx, p.Account, secret, devPub, "test", "ios", "1")
+	id, err := c.LinkDevice(ctx, client.DeviceLink{Account: p.Account, Secret: secret, DeviceSig: devPub, Name: "test", Platform: "ios", AppVersion: "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,15 +134,87 @@ func TestFetchSkipsBadEnvelopes(t *testing.T) {
 	s, _ = OpenState(dir)
 	defer s.Close()
 	res, err := Fetch(ctx, Env{Out: io.Discard, Err: io.Discard}, s, FetchOptions{})
-	if err != nil || res.Envelopes != 3 || res.Failed != 2 || res.Days != 3 {
+	if err != nil || res.Envelopes != 3 || res.Failed != 2 || res.Days != 3 || res.Quarantined != 2 {
 		t.Fatalf("fetch: %+v %v", res, err)
+	}
+	// Unreadable envelopes stay quarantined locally and are retried on every fetch.
+	res, err = Fetch(ctx, Env{Out: io.Discard, Err: io.Discard}, s, FetchOptions{})
+	if err != nil || res.Recovered != 0 || res.Quarantined != 2 {
+		t.Fatalf("second fetch: %+v %v", res, err)
 	}
 	db, _ := OpenDB(s.DBPath())
 	defer db.Close()
-	cov, _ := db.Coverage(ctx)
-	if cov.Failed != 2 || cov.Envelopes != 3 {
-		t.Fatalf("envelope log: %+v", cov)
+	q, err := db.Quarantined(ctx)
+	if err != nil || len(q) != 2 || q[0].Attempts != 2 {
+		t.Fatalf("quarantine: %+v %v", q, err)
 	}
+}
+
+func TestQuarantinedEnvelopeIsRecovered(t *testing.T) {
+	ctx := context.Background()
+	relayURL := startRelay(t)
+	dir := t.TempDir()
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--relay", relayURL, "--no-terminal-qr"); code != 0 {
+		t.Fatal(e)
+	}
+	s, _ := OpenState(dir)
+	defer s.Close()
+	id, err := s.LoadIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc, _ := time.LoadLocation("Europe/Berlin")
+	plain, _ := json.Marshal(healthdata.Synthetic(time.Now(), 2, loc, 1))
+	e, _ := protocol.Seal(plain, id.Enc.PublicKey(), protocol.SealParams{Account: s.Config.Account})
+	db, _ := OpenDB(s.DBPath())
+	// Simulates an envelope an older CLI could not read.
+	if err := db.Quarantine(ctx, protocol.StoredEnvelope{Envelope: e, Seq: 7}, "unsupported", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	res, err := Fetch(ctx, Env{Out: io.Discard, Err: io.Discard}, s, FetchOptions{})
+	if err != nil || res.Recovered != 1 || res.Quarantined != 0 || res.Days != 2 {
+		t.Fatalf("recovery: %+v %v", res, err)
+	}
+}
+
+func TestRotateKeepsRelayAndName(t *testing.T) {
+	relayURL := startRelay(t)
+	dir := t.TempDir()
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--relay", relayURL, "--name", "Desk", "--no-terminal-qr"); code != 0 {
+		t.Fatal(e)
+	}
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--rotate", "--no-terminal-qr"); code != 0 {
+		t.Fatalf("rotate without --relay: %s", e)
+	}
+	s, _ := OpenState(dir)
+	defer s.Close()
+	if s.Config.Relay != relayURL || s.Config.Name != "Desk" || s.Config.SafetyCode == "" || !s.Config.Registered {
+		t.Fatalf("rotated config: %+v", s.Config)
+	}
+}
+
+func TestFetchPositionResetsWhenRelayForgotAccount(t *testing.T) {
+	dir := t.TempDir()
+	first := startRelay(t)
+	if _, e, code := run(t, "--state-dir", dir, "onboard", "--relay", first, "--no-terminal-qr"); code != 0 {
+		t.Fatal(e)
+	}
+	s, _ := OpenState(dir)
+	s.Config.LastSeq = 5000
+	// Same URL, empty database: emulate a relay reset by pointing at a fresh relay.
+	s.Config.Relay = startRelay(t)
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := s.LoadIdentity()
+	if err := register(context.Background(), Env{Out: io.Discard, Err: io.Discard}, s, id); err != nil {
+		t.Fatal(err)
+	}
+	if s.Config.LastSeq != 0 {
+		t.Fatalf("fetch position not reset: %d", s.Config.LastSeq)
+	}
+	s.Close()
 }
 
 func TestMCPProtocol(t *testing.T) {
@@ -183,8 +255,15 @@ func TestMCPProtocol(t *testing.T) {
 	if v := responses[0]["result"].(map[string]any)["protocolVersion"]; v != "2025-03-26" {
 		t.Fatalf("version negotiation: %v", v)
 	}
-	summary := responses[2]["result"].(map[string]any)
-	if summary["isError"] != false || !strings.Contains(summary["content"].([]any)[0].(map[string]any)["text"].(string), "Health summary") {
+	text := func(r map[string]any) string {
+		return r["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+	}
+	if sync := responses[1]; sync["result"].(map[string]any)["isError"] != false ||
+		!strings.HasPrefix(text(sync), "Fetched 1 envelopes; 10 days") || !strings.Contains(text(sync), "(0 failed)") {
+		t.Fatalf("sync tool: %v", sync)
+	}
+	if summary := responses[2]; summary["result"].(map[string]any)["isError"] != false ||
+		!strings.Contains(text(summary), "Health summary") || !strings.Contains(text(summary), "Steps") {
 		t.Fatalf("summary tool: %v", summary)
 	}
 	if responses[3]["result"].(map[string]any)["isError"] != true {
@@ -192,5 +271,43 @@ func TestMCPProtocol(t *testing.T) {
 	}
 	if responses[4]["error"].(map[string]any)["code"].(float64) != -32601 || responses[5]["error"].(map[string]any)["code"].(float64) != -32700 {
 		t.Fatalf("error codes: %v %v", responses[4], responses[5])
+	}
+}
+
+// After a relay reset or onboard --rotate, sequence numbers start over while the
+// local database stays: a new unreadable envelope reusing a quarantined seq must
+// not replace or drop the one already kept.
+func TestQuarantineKeepsEnvelopesWithReusedSeq(t *testing.T) {
+	ctx := context.Background()
+	db, err := OpenDB(filepath.Join(t.TempDir(), "health.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	key, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := protocol.NewAccountID()
+	first, _ := protocol.Seal([]byte(`{}`), key.PublicKey(), protocol.SealParams{Account: account})
+	second, _ := protocol.Seal([]byte(`{}`), key.PublicKey(), protocol.SealParams{Account: account})
+	now := time.Now()
+	for _, e := range []protocol.Envelope{first, second, first} {
+		if err := db.Quarantine(ctx, protocol.StoredEnvelope{Envelope: e, Seq: 7}, "unsupported", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q, err := db.Quarantined(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(q) != 2 || q[0].Envelope.ID != first.ID || q[0].Attempts != 2 || q[1].Envelope.ID != second.ID {
+		t.Fatalf("quarantine: %+v", q)
+	}
+	if err := db.Release(ctx, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if q, _ := db.Quarantined(ctx); len(q) != 1 || q[0].Envelope.ID != second.ID {
+		t.Fatalf("after release: %+v", q)
 	}
 }

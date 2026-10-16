@@ -54,8 +54,7 @@ func TestSanitizerDropsUntrustedContent(t *testing.T) {
 	    {"id": "6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f31", "type": "Running; DROP TABLE", "start": "2026-10-12T16:00:00Z", "end": "2026-10-12T16:30:00Z"}
 	  ]
 	}`
-	// resting_bpm 1e309 overflows float64 and must be rejected by the decoder path.
-	raw = strings.Replace(raw, "1e309", "300", 1)
+	// resting_bpm 1e309 overflows float64: only that value is dropped, not the batch.
 	b, rep, err := Parse([]byte(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -93,5 +92,21 @@ func TestRejectsWrongSchema(t *testing.T) {
 	}
 	if _, _, err := Parse([]byte(`[1,2]`)); err == nil {
 		t.Fatal("accepted array")
+	}
+}
+
+func TestWorkoutHeartRateWithOnlyRecoveryIsKept(t *testing.T) {
+	raw := `{"schema":1,"generated_at":"2026-10-13T08:00:00Z","source":{"app_version":"1.0"},"days":{},"workouts":[
+	  {"id":"6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f30","type":"running","start":"2026-10-12T16:00:00Z","end":"2026-10-12T16:30:00Z","heart_rate":{"recovery_1min_bpm":28}},
+	  {"id":"6f1c0b8e-3d1a-4c55-9a3e-7a6c8d1e2f31","type":"running","start":"2026-10-12T17:00:00Z","end":"2026-10-12T17:30:00Z","heart_rate":{"max_reference_bpm":190}}]}`
+	b, rep, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hr := b.Workouts[0].HeartRate; hr == nil || hr.Recovery1MinBPM == nil || *hr.Recovery1MinBPM != 28 {
+		t.Fatalf("recovery-only heart rate dropped: %+v", b.Workouts[0].HeartRate)
+	}
+	if b.Workouts[1].HeartRate != nil || rep.DroppedValues != 1 {
+		t.Fatalf("reference-only heart rate: %+v, dropped %d", b.Workouts[1].HeartRate, rep.DroppedValues)
 	}
 }

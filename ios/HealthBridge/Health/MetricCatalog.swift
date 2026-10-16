@@ -62,6 +62,19 @@ enum MetricGroup: String, Codable, CaseIterable, Sendable {
     case vitals
     case nutrition
     case mindfulness
+
+    /// The user-facing category that enables this group. Exhaustive on purpose: a new
+    /// group must decide its category instead of silently landing in Activity.
+    var category: MetricCategory {
+        switch self {
+        case .activity: return .activity
+        case .heart: return .heart
+        case .body: return .body
+        case .vitals: return .vitals
+        case .nutrition: return .nutrition
+        case .mindfulness: return .mindfulness
+        }
+    }
 }
 
 enum MetricAggregation {
@@ -134,6 +147,8 @@ enum MetricUnit {
     /// The HealthKit unit used to read the raw value.
     var hkUnit: HKUnit {
         switch self {
+        // Stand hours come from HKActivitySummary.appleStandHours, a count quantity,
+        // not a duration.
         case .count, .bmi, .hour:
             return .count()
         case .meter:
@@ -236,7 +251,6 @@ enum MetricValue {
 }
 
 enum MetricCatalog {
-    // swiftlint:disable function_body_length
     static let all: [MetricDefinition] = [
         // MARK: activity
         quantity("steps", .activity, .stepCount, .count, .sum, 0...200_000, 0, "Steps", "figure.walk"),
@@ -334,7 +348,6 @@ enum MetricCatalog {
             displayName: "Mindful Minutes", symbol: "brain.head.profile"
         ),
     ]
-    // swiftlint:enable function_body_length
 
     static func metrics(in category: MetricCategory) -> [MetricDefinition] {
         all.filter { $0.category == category }
@@ -381,7 +394,7 @@ enum MetricCatalog {
     ) -> MetricDefinition {
         MetricDefinition(
             key: key,
-            category: MetricCategory(rawValue: group.rawValue) ?? .activity,
+            category: group.category,
             group: group,
             source: .quantity(identifier),
             unit: unit,

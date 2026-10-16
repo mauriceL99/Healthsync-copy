@@ -1,12 +1,14 @@
 import BackgroundTasks
 import Foundation
 import HealthKit
+import os
 import UIKit
 
-/// Identifiers must match `BGTaskSchedulerPermittedIdentifiers` in Info.plist.
+/// Identifiers must match `BGTaskSchedulerPermittedIdentifiers` in Info.plist, which
+/// expands `$(PRODUCT_BUNDLE_IDENTIFIER).refresh` / `.backfill` to the same values.
 enum BackgroundTaskID {
-    static let refresh = "com.example.healthbridge.refresh"
-    static let backfill = "com.example.healthbridge.backfill"
+    static let refresh = AppIdentifiers.refreshTask
+    static let backfill = AppIdentifiers.backfillTask
 }
 
 /// Calls a BGTask completion exactly once, whichever of "work finished" and
@@ -41,6 +43,9 @@ final class BackgroundSync {
     private let healthUpdateThrottle: TimeInterval = 15 * 60
     /// Safety-net refresh interval while in "On new data" mode.
     private let onNewDataFallbackInterval: TimeInterval = 12 * 3600
+    /// Earliest start for a newly scheduled refresh, so a failing sync is not retried
+    /// every few minutes.
+    private let minimumRefreshDelay: TimeInterval = 5 * 60
 
     private var registered = false
     private var observerQueries: [HKObserverQuery] = []
@@ -49,6 +54,7 @@ final class BackgroundSync {
     private var pendingObserverCompletions: [() -> Void] = []
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var deliveryClearedThisLaunch = false
+    private var deliveryUpdate: Task<Void, Never>?
 
     private var health: HealthKitService { .shared }
 
@@ -57,15 +63,21 @@ final class BackgroundSync {
     func registerTasks() {
         guard !registered else { return }
         registered = true
-        _ = BGTaskScheduler.shared.register(forTaskWithIdentifier: BackgroundTaskID.refresh, using: nil) { task in
+        let refresh = BGTaskScheduler.shared.register(forTaskWithIdentifier: BackgroundTaskID.refresh, using: nil) { task in
             Task { @MainActor in
                 BackgroundSync.shared.handleAppRefresh(task)
             }
         }
-        _ = BGTaskScheduler.shared.register(forTaskWithIdentifier: BackgroundTaskID.backfill, using: nil) { task in
+        let backfill = BGTaskScheduler.shared.register(forTaskWithIdentifier: BackgroundTaskID.backfill, using: nil) { task in
             Task { @MainActor in
                 BackgroundSync.shared.handleBackfill(task)
             }
+        }
+        if !refresh || !backfill {
+            // Only happens when the identifiers are missing from BGTaskSchedulerPermittedIdentifiers;
+            // background sync would then never run.
+            Log.background.fault("Background task registration failed (refresh: \(refresh), backfill: \(backfill)); check BGTaskSchedulerPermittedIdentifiers in Info.plist")
+            assertionFailure("Background task identifiers do not match Info.plist")
         }
     }
 
@@ -93,11 +105,13 @@ final class BackgroundSync {
         }
     }
 
-    /// The next run is anchored to the last successful sync, so opening the app does not
-    /// keep pushing the background sync further out.
+    /// The next run is anchored to the last sync attempt, successful or not: opening the app
+    /// does not keep pushing the background sync further out, and a sync that keeps failing
+    /// is retried once per interval instead of every few minutes.
     private func nextRefreshDate(interval: TimeInterval) -> Date {
-        let anchor = SettingsStore.loadState().lastSuccessfulSync ?? Date()
-        return max(anchor.addingTimeInterval(interval), Date(timeIntervalSinceNow: 5 * 60))
+        let state = SettingsStore.loadState()
+        let anchor = [state.lastSuccessfulSync, state.lastAttempt].compactMap { $0 }.max() ?? Date()
+        return max(anchor.addingTimeInterval(interval), Date(timeIntervalSinceNow: minimumRefreshDelay))
     }
 
     func scheduleRefresh(at earliest: Date) {
@@ -107,7 +121,8 @@ final class BackgroundSync {
             try BGTaskScheduler.shared.submit(request)
             SettingsStore.updateState { $0.nextScheduledSync = earliest }
         } catch {
-            // Simulator or background refresh disabled by the user.
+            // Simulator or Background App Refresh turned off; Home shows "Background refresh off".
+            Log.background.error("Scheduling the background refresh failed: \(error.localizedDescription, privacy: .public)")
             SettingsStore.updateState { $0.nextScheduledSync = nil }
         }
     }
@@ -120,7 +135,7 @@ final class BackgroundSync {
     /// Schedules a BGProcessingTask when the history import has not completed yet
     /// (for example because the app was closed during the first sync).
     func scheduleBackfillIfNeeded() {
-        guard PairingStore.isPaired, SettingsStore.onboardingComplete else { return }
+        guard PairingStore.isPairedIfKnown() == true, SettingsStore.onboardingComplete else { return }
         let settings = SettingsStore.loadSettings()
         let state = SettingsStore.loadState()
         guard state.backfilledDays < settings.effectiveHistoryDays(isPro: EntitlementCache.isPro) else { return }
@@ -128,7 +143,13 @@ final class BackgroundSync {
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
         request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
-        try? BGTaskScheduler.shared.submit(request)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // Simulator or Background App Refresh turned off: the next sync in the app
+            // continues the import.
+            Log.background.error("Scheduling the history import failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func cancelAll() {
@@ -169,7 +190,11 @@ final class BackgroundSync {
 
     /// Runs one sync. Returns false if it should be retried.
     private func runSync(trigger: SyncTrigger, requiresPro: Bool) async -> Bool {
-        guard PairingStore.isPaired, SettingsStore.onboardingComplete else { return true }
+        guard let paired = PairingStore.isPairedIfKnown() else {
+            // Keychain not readable yet (before the first unlock after a reboot): retry later.
+            return false
+        }
+        guard paired, SettingsStore.onboardingComplete else { return true }
         let isPro = await PurchaseManager.verifiedProEntitlement()
         EntitlementCache.isPro = isPro
         if requiresPro && !isPro {
@@ -204,17 +229,15 @@ final class BackgroundSync {
 
         let wanted = health.observerTypes(for: categories)
         // Drop registrations for categories that are no longer shared (they may survive
-        // from an earlier launch). Never disable-all here: it could race the enables below.
+        // from an earlier launch).
         let unwanted = health.observerTypes(for: Set(MetricCategory.allCases)).filter { !wanted.contains($0) }
-        for type in unwanted {
-            store.disableBackgroundDelivery(for: type) { _, _ in }
-        }
         observedCategories = categories
         deliveryClearedThisLaunch = true
 
         for type in wanted {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completionHandler, error in
-                if error != nil {
+                if let error {
+                    Log.background.error("Observer query failed: \(error.localizedDescription, privacy: .public)")
                     completionHandler()
                     return
                 }
@@ -224,7 +247,28 @@ final class BackgroundSync {
             }
             store.execute(query)
             observerQueries.append(query)
-            store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+        }
+
+        let fallbackHours = Int(onNewDataFallbackInterval / 3600)
+        updateDelivery { store in
+            for type in unwanted {
+                do {
+                    try await store.disableBackgroundDelivery(for: type)
+                } catch {
+                    Log.background.error("Disabling background delivery for \(type.identifier, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            var lastFailure: Error?
+            for type in wanted {
+                do {
+                    try await store.enableBackgroundDelivery(for: type, frequency: .hourly)
+                } catch {
+                    Log.background.error("Enabling background delivery for \(type.identifier, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                    lastFailure = error
+                }
+            }
+            guard let failure = lastFailure else { return nil }
+            return "Apple Health did not allow background updates (\(failure.localizedDescription)). HealthBridge still syncs about every \(fallbackHours) hours."
         }
     }
 
@@ -237,7 +281,27 @@ final class BackgroundSync {
         observerQueries.forEach { store.stop($0) }
         observerQueries.removeAll()
         observedCategories = []
-        store.disableAllBackgroundDelivery { _, _ in }
+        updateDelivery { store in
+            do {
+                try await store.disableAllBackgroundDelivery()
+            } catch {
+                Log.background.error("Disabling background delivery failed: \(error.localizedDescription, privacy: .public)")
+            }
+            return nil
+        }
+    }
+
+    /// HealthKit applies background-delivery changes asynchronously. Running them one after
+    /// another keeps an earlier "disable all" from landing after a later "enable". The
+    /// update returns a problem for the user (shown on Home) or nil.
+    private func updateDelivery(_ update: @escaping @MainActor (HKHealthStore) async -> String?) {
+        let previous = deliveryUpdate
+        let store = health.store
+        deliveryUpdate = Task { @MainActor in
+            await previous?.value
+            let problem = await update(store)
+            SettingsStore.updateState { $0.backgroundDeliveryProblem = problem }
+        }
     }
 
     /// Called for every observer update. Coalesces bursts into one sync and always calls
@@ -248,6 +312,9 @@ final class BackgroundSync {
 
         if let last = SettingsStore.loadState().lastSuccessfulSync,
            Date().timeIntervalSince(last) < healthUpdateThrottle {
+            // Too soon after the last sync. Ask for a refresh when the throttle window ends,
+            // so this update does not wait for the next observer wake-up or the fallback.
+            scheduleRefresh(at: last.addingTimeInterval(healthUpdateThrottle))
             flushObserverCompletions()
             return
         }

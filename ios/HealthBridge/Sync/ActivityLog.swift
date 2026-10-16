@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum SyncTrigger: String, Codable, Sendable {
     case manual
@@ -39,6 +40,8 @@ struct ActivityLogEntry: Codable, Identifiable, Equatable, Sendable {
     var lastDay: String?
     var duration: TimeInterval = 0
     var errorMessage: String?
+    /// A sync that succeeded but left something out (optional, so older logs still decode).
+    var warning: String?
 
     var succeeded: Bool {
         errorMessage == nil
@@ -89,18 +92,52 @@ final class ActivityLogStore: @unchecked Sendable {
 
     func clear() {
         lock.lock()
-        try? FileManager.default.removeItem(at: fileURL)
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+        } catch CocoaError.fileNoSuchFile {
+            // Already empty.
+        } catch {
+            Log.storage.error("Clearing the activity log failed: \(error.localizedDescription, privacy: .public)")
+        }
         lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
     private func readUnlocked() -> [ActivityLogEntry] {
-        guard let data = try? Data(contentsOf: fileURL) else { return [] }
-        return (try? JSONDecoder().decode([ActivityLogEntry].self, from: data)) ?? []
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return []
+        } catch {
+            Log.storage.error("Activity log unreadable: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+        do {
+            return try JSONDecoder().decode([ActivityLogEntry].self, from: data)
+        } catch {
+            // Keep the undecodable file (e.g. written by a newer app version) instead of
+            // letting the next append overwrite it.
+            let backup = fileURL.deletingPathExtension()
+                .appendingPathExtension("unreadable-\(Int(Date().timeIntervalSince1970)).json")
+            do {
+                try FileManager.default.moveItem(at: fileURL, to: backup)
+                Log.storage.error("Activity log could not be decoded; kept it as \(backup.lastPathComponent, privacy: .public)")
+            } catch {
+                Log.storage.error("Activity log could not be decoded or moved aside: \(error.localizedDescription, privacy: .public)")
+            }
+            return []
+        }
     }
 
     private func writeUnlocked(_ entries: [ActivityLogEntry]) {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        // The log is diagnostics only: a failed write must never fail a sync, but it is
+        // recorded in the unified log.
+        do {
+            let data = try JSONEncoder().encode(entries)
+            try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            Log.storage.error("Activity log could not be written: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

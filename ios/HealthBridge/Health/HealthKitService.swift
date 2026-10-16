@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import os
 
 enum HealthAccessError: LocalizedError {
     case unavailable
@@ -191,6 +192,16 @@ final class HealthKitService: @unchecked Sendable {
         isDatabaseLocked(error) ? HealthAccessError.locked : error
     }
 
+    /// Ends a query continuation after an error: "no data" is an empty result, a locked
+    /// database becomes `HealthAccessError.locked`, anything else is passed on.
+    private static func finish<T>(_ continuation: CheckedContinuation<T, Error>, after error: Error, empty: T) {
+        if isNoData(error) {
+            continuation.resume(returning: empty)
+        } else {
+            continuation.resume(throwing: mapped(error))
+        }
+    }
+
     // MARK: - Daily statistics
 
     func dailyStatistics(
@@ -200,9 +211,13 @@ final class HealthKitService: @unchecked Sendable {
         range: DayRange
     ) async throws -> [String: DailyStatistic] {
         guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return [:] }
-        // Cumulative options on a discrete type (or vice versa) raise an exception: guard it.
+        // Cumulative options on a discrete type (or vice versa) raise an exception. The
+        // catalog must never produce that (pinned by HealthLogicTests); in release builds
+        // the metric is skipped instead of crashing.
         let isCumulative = type.aggregationStyle == .cumulative
         if isCumulative != options.contains(.cumulativeSum) {
+            assertionFailure("Statistics options do not match the aggregation style of \(identifier.rawValue)")
+            Log.sync.error("Skipped \(identifier.rawValue, privacy: .public): options do not match its aggregation style")
             return [:]
         }
         let predicate = HKQuery.predicateForSamples(withStart: range.start, end: range.end, options: .strictStartDate)
@@ -220,11 +235,7 @@ final class HealthKitService: @unchecked Sendable {
             )
             query.initialResultsHandler = { _, collection, error in
                 if let error {
-                    if Self.isNoData(error) {
-                        continuation.resume(returning: [:])
-                    } else {
-                        continuation.resume(throwing: Self.mapped(error))
-                    }
+                    Self.finish(continuation, after: error, empty: [:])
                     return
                 }
                 let result = Accumulator<[String: DailyStatistic]>([:])
@@ -285,11 +296,7 @@ final class HealthKitService: @unchecked Sendable {
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKActivitySummaryQuery(predicate: predicate) { _, summaries, error in
                 if let error {
-                    if Self.isNoData(error) {
-                        continuation.resume(returning: [:])
-                    } else {
-                        continuation.resume(throwing: Self.mapped(error))
-                    }
+                    Self.finish(continuation, after: error, empty: [:])
                     return
                 }
                 var result: [String: ActivitySummaryValues] = [:]
@@ -340,11 +347,7 @@ final class HealthKitService: @unchecked Sendable {
                 sortDescriptors: [sort]
             ) { _, samples, error in
                 if let error {
-                    if Self.isNoData(error) {
-                        continuation.resume(returning: [])
-                    } else {
-                        continuation.resume(throwing: Self.mapped(error))
-                    }
+                    Self.finish(continuation, after: error, empty: [])
                     return
                 }
                 continuation.resume(returning: samples ?? [])
@@ -388,11 +391,7 @@ final class HealthKitService: @unchecked Sendable {
                 if accumulator.finished { return }
                 if let error {
                     accumulator.finished = true
-                    if Self.isNoData(error) {
-                        continuation.resume(returning: accumulator.value)
-                    } else {
-                        continuation.resume(throwing: Self.mapped(error))
-                    }
+                    Self.finish(continuation, after: error, empty: accumulator.value)
                     return
                 }
                 if let quantity, let dateInterval {
@@ -418,11 +417,7 @@ final class HealthKitService: @unchecked Sendable {
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .discreteMax) { _, statistics, error in
                 if let error {
-                    if Self.isNoData(error) {
-                        continuation.resume(returning: nil)
-                    } else {
-                        continuation.resume(throwing: Self.mapped(error))
-                    }
+                    Self.finish(continuation, after: error, empty: nil)
                     return
                 }
                 continuation.resume(returning: statistics?.maximumQuantity()?.doubleValue(for: unit))
@@ -433,9 +428,9 @@ final class HealthKitService: @unchecked Sendable {
 
     /// Age in whole years, if the user shares the date of birth.
     func age(on date: Date = Date()) -> Int? {
+        // Not shared and not set are both "unknown" here; the caller falls back.
         guard let components = try? store.dateOfBirthComponents() else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .current
+        let calendar = DayKey.localCalendar
         guard let birthDate = calendar.date(from: components) else { return nil }
         return calendar.dateComponents([.year], from: birthDate, to: date).year
     }

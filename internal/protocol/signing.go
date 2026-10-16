@@ -22,8 +22,11 @@ const (
 
 	// MaxClockSkew is the accepted difference between client and relay clocks.
 	MaxClockSkew = 300 * time.Second
-	// NonceWindow is how long the relay remembers nonces.
-	NonceWindow = 600 * time.Second
+	// NonceWindow is how long the relay remembers nonces. A request is accepted
+	// while its timestamp is within ±MaxClockSkew, i.e. for up to 2×MaxClockSkew
+	// of relay time, so the nonce must be remembered at least that long to
+	// reject every replay.
+	NonceWindow = 2 * MaxClockSkew
 )
 
 // ErrStaleRequest reports a timestamp outside MaxClockSkew (usually a wrong device clock).

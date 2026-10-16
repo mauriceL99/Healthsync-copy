@@ -56,24 +56,14 @@ enum HB1 {
         guard value.hasPrefix(prefix) else { return false }
         let rest = value.utf8.dropFirst(prefix.utf8.count)
         guard rest.count == 22 else { return false }
-        return rest.allSatisfy { byte in
-            switch byte {
-            case UInt8(ascii: "A")...UInt8(ascii: "Z"),
-                 UInt8(ascii: "a")...UInt8(ascii: "z"),
-                 UInt8(ascii: "0")...UInt8(ascii: "9"),
-                 UInt8(ascii: "-"),
-                 UInt8(ascii: "_"):
-                return true
-            default:
-                return false
-            }
-        }
+        return rest.allSatisfy(B64URL.isAlphabet)
     }
 
     /// Removes control characters and trims a human label (agent or device name).
     static func cleanLabel(_ value: String, maxLength: Int = 64) -> String {
+        // Same rule as the Go CleanLabel: drop Unicode category Cc (C0, DEL and C1).
         let scalars = value.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.filter { scalar in
-            !(scalar.value < 0x20 || scalar.value == 0x7f)
+            scalar.properties.generalCategory != .control
         }
         var cleaned = String(String.UnicodeScalarView(scalars))
         if cleaned.unicodeScalars.count > maxLength {

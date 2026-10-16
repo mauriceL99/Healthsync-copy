@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import os
 
 struct BatchOptions: Equatable, Sendable {
     var categories: Set<MetricCategory>
@@ -10,8 +11,15 @@ struct BatchOptions: Equatable, Sendable {
 }
 
 /// Reads HealthKit for a day range and produces a HealthBatch (docs/DATA_SCHEMA.md).
-struct HealthBatchBuilder {
+/// Use one builder per sync run: it counts the reads it had to skip.
+final class HealthBatchBuilder {
     let health: HealthKitService
+    /// HealthKit reads that failed with an ordinary error and were left out (each is logged).
+    private(set) var skippedReads = 0
+
+    init(health: HealthKitService) {
+        self.health = health
+    }
 
     func build(range: DayRange, options: BatchOptions, now: Date = Date()) async throws -> HealthBatch {
         var days: [String: DayRecord] = [:]
@@ -41,9 +49,23 @@ struct HealthBatchBuilder {
         )
     }
 
-    /// Runs a HealthKit read and skips the metric on ordinary errors, but propagates a locked
-    /// database (the whole sync must be retried later).
-    private func tolerant<T>(_ fallback: T, _ operation: () async throws -> T) async throws -> T {
+    /// `max_reference_bpm`: `220 − age`, else the highest heart rate of the last 365 days,
+    /// else the default from `HeartRateAnalyzer.maxReference`.
+    func maxReferenceBPM(now: Date, calendar: Calendar) async throws -> Double {
+        let age = health.age(on: now)
+        var observedMax: Double?
+        if age == nil, let yearAgo = calendar.date(byAdding: .day, value: -365, to: now) {
+            observedMax = try await tolerant("maximum heart rate", nil) {
+                try await health.maximumHeartRate(since: yearAgo)
+            }
+        }
+        return HeartRateAnalyzer.maxReference(age: age, observedMax: observedMax)
+    }
+
+    /// Runs a HealthKit read and skips it on ordinary errors (logged and counted in
+    /// `skippedReads`), but propagates a locked database (the whole sync must be retried
+    /// later) and cancellation.
+    private func tolerant<T>(_ read: String, _ fallback: T, _ operation: () async throws -> T) async throws -> T {
         do {
             return try await operation()
         } catch let error as HealthAccessError {
@@ -54,6 +76,8 @@ struct HealthBatchBuilder {
             if HealthKitService.isDatabaseLocked(error) {
                 throw HealthAccessError.locked
             }
+            skippedReads += 1
+            Log.sync.error("Skipped HealthKit read (\(read, privacy: .public)): \(error.localizedDescription, privacy: .public)")
             return fallback
         }
     }
@@ -84,7 +108,7 @@ struct HealthBatchBuilder {
                 options.formUnion(definition.aggregation.statisticsOption)
             }
             let unit = first.unit.hkUnit
-            let statistics = try await tolerant([:]) {
+            let statistics = try await tolerant(identifier.rawValue, [:]) {
                 try await health.dailyStatistics(identifier: identifier, unit: unit, options: options, range: range)
             }
             for (dayKey, daily) in statistics {
@@ -101,7 +125,7 @@ struct HealthBatchBuilder {
     // MARK: - Activity summaries
 
     private func addActivitySummaries(to days: inout [String: DayRecord], range: DayRange) async throws {
-        let summaries = try await tolerant([:]) {
+        let summaries = try await tolerant("activity summaries", [:]) {
             try await health.activitySummaries(range: range)
         }
         let validKeys = Set(range.dayKeys)
@@ -123,7 +147,7 @@ struct HealthBatchBuilder {
         let calendar = range.calendar
         let queryStart = SleepAggregator.windowStart(forDay: range.start, calendar: calendar)
         let queryEnd = SleepAggregator.windowEnd(forDay: range.lastDay, calendar: calendar)
-        let intervals = try await tolerant([]) {
+        let intervals = try await tolerant("sleep", []) {
             try await health.sleepIntervals(from: queryStart, to: queryEnd)
         }
         let records = SleepAggregator.aggregate(intervals, calendar: calendar, dayKeys: Set(range.dayKeys))
@@ -135,7 +159,7 @@ struct HealthBatchBuilder {
     // MARK: - Mindfulness
 
     private func addMindfulness(to days: inout [String: DayRecord], range: DayRange) async throws {
-        let samples = try await tolerant([]) {
+        let samples = try await tolerant("mindful sessions", []) {
             try await health.categorySamples(.mindfulSession, from: range.start, to: range.end)
         }
         guard !samples.isEmpty, let definition = MetricCatalog.metrics(in: .mindfulness).first else { return }
@@ -187,7 +211,7 @@ struct HealthBatchBuilder {
     // MARK: - Workouts
 
     private func buildWorkouts(range: DayRange, options: BatchOptions) async throws -> [WorkoutRecord] {
-        let workouts = try await tolerant([]) {
+        let workouts = try await tolerant("workouts", []) {
             try await health.workouts(from: range.start, to: range.end)
         }
         var records: [WorkoutRecord] = []
@@ -202,14 +226,14 @@ struct HealthBatchBuilder {
 
     private func makeRecord(for workout: HKWorkout, options: BatchOptions) async throws -> WorkoutRecord? {
         let duration = workout.endDate.timeIntervalSince(workout.startDate)
-        guard duration >= 0, duration <= 172_800 else { return nil }
+        guard duration >= 0, duration <= HeartRateAnalyzer.maxWorkoutSeconds else { return nil }
 
         var record = WorkoutRecord(
             id: workout.uuid.uuidString.lowercased(),
             type: workout.workoutActivityType.schemaName,
             start: RFC3339.string(from: workout.startDate),
             end: RFC3339.string(from: workout.endDate),
-            durationS: MetricValue.normalize(workout.duration, decimals: 0, range: 0...172_800)
+            durationS: MetricValue.normalize(workout.duration, decimals: 0, range: 0...HeartRateAnalyzer.maxWorkoutSeconds)
                 ?? duration.rounded()
         )
 
@@ -234,8 +258,8 @@ struct HealthBatchBuilder {
         heartRate.maxBpm = stats.maximum.flatMap { MetricValue.normalize($0, decimals: 0, range: HeartRateAnalyzer.validRange) }
 
         if options.heartRateDetails {
-            let points = try await tolerant([]) {
-                try await health.heartRatePoints(from: workout.startDate, to: workout.endDate.addingTimeInterval(90))
+            let points = try await tolerant("workout heart rate", []) {
+                try await health.heartRatePoints(from: workout.startDate, to: workout.endDate.addingTimeInterval(HeartRateAnalyzer.samplesAfterEnd))
             }
             if !points.isEmpty {
                 let maxReference = options.maxReferenceBPM ?? HeartRateAnalyzer.maxReference(age: nil, observedMax: nil)

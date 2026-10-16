@@ -8,14 +8,16 @@ struct SettingsView: View {
     @State private var confirmUnpair = false
     @State private var confirmResend = false
     @State private var isUnpairing = false
-    @State private var unpairWarning: String?
+    @State private var unpairAlert: UnpairAlert?
     @State private var showManageSubscriptions = false
 
     var body: some View {
         Form {
             agentSection
             syncSection
-            proSection
+            if AppEdition.sellsPro {
+                proSection
+            }
             privacySection
             aboutSection
             unpairSection
@@ -46,10 +48,10 @@ struct SettingsView: View {
         } message: {
             Text("Useful after enabling new categories. Your agent merges the data per day.")
         }
-        .alert("Unpaired", isPresented: unpairWarningBinding) {
+        .alert(unpairAlert?.title ?? "", isPresented: unpairAlertBinding, presenting: unpairAlert) { _ in
             Button("OK", role: .cancel) {}
-        } message: {
-            Text(unpairWarning ?? "")
+        } message: { alert in
+            Text(alert.message)
         }
     }
 
@@ -118,7 +120,7 @@ struct SettingsView: View {
         } header: {
             Text("HealthBridge Pro")
         } footer: {
-            Text("Free: manual sync and the last 7 days. Pro: background sync, up to 365 days and workout heart-rate details.")
+            Text("Free: manual sync and the last \(HistoryWindow.freeLimit.title). Pro: background sync, up to \(HistoryWindow.proLimit.title) and workout heart-rate details.")
         }
     }
 
@@ -177,7 +179,7 @@ struct SettingsView: View {
 
     private var historyBinding: Binding<HistoryWindow> {
         Binding(
-            get: { model.settings.historyWindow.requiresPro && !purchases.isPro ? .week : model.settings.historyWindow },
+            get: { model.settings.effectiveHistoryWindow(isPro: purchases.isPro) },
             set: { window in
                 if window.requiresPro && !purchases.isPro {
                     showPaywall = true
@@ -188,20 +190,34 @@ struct SettingsView: View {
         )
     }
 
-    private var unpairWarningBinding: Binding<Bool> {
+    private var unpairAlertBinding: Binding<Bool> {
         Binding(
-            get: { unpairWarning != nil },
-            set: { if !$0 { unpairWarning = nil } }
+            get: { unpairAlert != nil },
+            set: { if !$0 { unpairAlert = nil } }
         )
     }
 
     @MainActor
     private func unpair() async {
         isUnpairing = true
-        let reachedRelay = await model.unpair()
+        let result = await model.unpair()
         isUnpairing = false
-        if !reachedRelay {
-            unpairWarning = "The relay could not be reached. Local keys were deleted; unlink the device on your agent as well."
+        if let localError = result.localError {
+            let relay = result.reachedRelay ? "The relay unlinked this iPhone, but the" : "The"
+            unpairAlert = UnpairAlert(
+                title: "Unpairing failed",
+                message: "\(relay) keys on this iPhone could not be deleted: \(localError) Try again."
+            )
+        } else if !result.reachedRelay {
+            unpairAlert = UnpairAlert(
+                title: "Unpaired",
+                message: "The relay could not be reached. Local keys were deleted; unlink the device on your agent as well."
+            )
         }
     }
+}
+
+private struct UnpairAlert {
+    let title: String
+    let message: String
 }

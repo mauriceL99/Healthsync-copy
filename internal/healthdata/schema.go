@@ -18,6 +18,16 @@ const (
 	MaxSleepSessions = 300
 	MaxHRSamples     = 4000
 	MaxWorkoutSecs   = 172800
+
+	// MinBPM and MaxBPM bound every heart-rate value (docs/DATA_SCHEMA.md).
+	MinBPM = 20
+	MaxBPM = 260
+	// HeartRateZones is the number of workout heart-rate zones (Z1–Z5).
+	HeartRateZones = 5
+	// minYear and maxYear reject nonsensical day keys: Apple Health has no data
+	// before the Unix epoch, and dates far in the future are corrupt input.
+	minYear = 1970
+	maxYear = 2200
 )
 
 var (
@@ -86,6 +96,9 @@ type Workout struct {
 // StartTime parses Start; sanitized workouts always have a valid start.
 func (w Workout) StartTime() time.Time { t, _ := time.Parse(time.RFC3339Nano, w.Start); return t }
 
+// EndTime parses End; sanitized workouts always have a valid end.
+func (w Workout) EndTime() time.Time { t, _ := time.Parse(time.RFC3339Nano, w.End); return t }
+
 // Batch is a sanitized HealthBatch.
 type Batch struct {
 	Schema      int               `json:"schema"`
@@ -120,7 +133,7 @@ func Parse(plaintext []byte) (Batch, Report, error) {
 	dec.UseNumber()
 	var raw map[string]any
 	if err := dec.Decode(&raw); err != nil {
-		return Batch{}, Report{}, errors.New("health batch is not a JSON object")
+		return Batch{}, Report{}, fmt.Errorf("health batch is not a JSON object: %w", err)
 	}
 	if dec.More() {
 		return Batch{}, Report{}, errors.New("trailing data after health batch")
@@ -203,36 +216,40 @@ func sanitizeDay(groups map[string]any, rep *Report) Day {
 		}
 		out := map[string]any{}
 		for _, key := range sortedKeys(values) {
-			value := values[key]
-			if group == "sleep" {
-				switch key {
-				case "bedtime", "wake_time":
-					if s, ok := value.(string); ok && validTimestamp(s) {
-						out[key] = s
-					} else {
-						rep.DroppedValues++
-					}
-					continue
-				case "sessions":
-					if sessions := sanitizeSessions(value, rep); len(sessions) > 0 {
-						out[key] = sessions
-					}
-					continue
-				}
+			if v, ok := sanitizeValue(group, key, values[key], rep); ok {
+				out[key] = v
 			}
-			metric, known := Lookup(group + "." + key)
-			n, isNum := num(value)
-			if !known || !isNum || n < metric.Min || n > metric.Max {
-				rep.DroppedValues++
-				continue
-			}
-			out[key] = round(n, 3)
 		}
 		if len(out) > 0 {
 			day[group] = out
 		}
 	}
 	return day
+}
+
+// sanitizeValue returns the cleaned value of group.key, or false when the key
+// is unknown or the value invalid (counted in rep, except empty session lists).
+func sanitizeValue(group, key string, value any, rep *Report) (any, bool) {
+	if group == "sleep" {
+		switch key {
+		case "bedtime", "wake_time":
+			if s, ok := value.(string); ok && validTimestamp(s) {
+				return s, true
+			}
+			rep.DroppedValues++
+			return nil, false
+		case "sessions":
+			sessions := sanitizeSessions(value, rep)
+			return sessions, len(sessions) > 0
+		}
+	}
+	metric, known := Lookup(group + "." + key)
+	n, isNum := num(value)
+	if !known || !isNum || n < metric.Min || n > metric.Max {
+		rep.DroppedValues++
+		return nil, false
+	}
+	return Round(n, 3), true
 }
 
 func sanitizeSessions(value any, rep *Report) []SleepSession {
@@ -291,9 +308,9 @@ func sanitizeWorkout(m map[string]any, rep *Report) (Workout, error) {
 
 func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 	hr := &WorkoutHeartRate{
-		AvgBPM:          bounded(m, "avg_bpm", 20, 260, rep),
-		MinBPM:          bounded(m, "min_bpm", 20, 260, rep),
-		MaxBPM:          bounded(m, "max_bpm", 20, 260, rep),
+		AvgBPM:          bounded(m, "avg_bpm", MinBPM, MaxBPM, rep),
+		MinBPM:          bounded(m, "min_bpm", MinBPM, MaxBPM, rep),
+		MaxBPM:          bounded(m, "max_bpm", MinBPM, MaxBPM, rep),
 		Recovery1MinBPM: bounded(m, "recovery_1min_bpm", 0, 150, rep),
 		MaxReferenceBPM: bounded(m, "max_reference_bpm", 100, 240, rep),
 	}
@@ -304,12 +321,12 @@ func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 			lo, okL := num(z["lower_bpm"])
 			hi, okH := num(z["upper_bpm"])
 			secs, okS := num(z["seconds"])
-			if i >= 5 || !ok || !okZ || !okL || !okH || !okS || zone < 1 || zone > 5 || zone != math.Trunc(zone) ||
-				lo < 0 || hi > 300 || lo > hi || secs < 0 || secs > MaxWorkoutSecs {
+			if i >= HeartRateZones || !ok || !okZ || !okL || !okH || !okS || zone < 1 || zone > HeartRateZones || zone != math.Trunc(zone) ||
+				lo < 0 || hi > MaxBPM || lo > hi || secs < 0 || secs > MaxWorkoutSecs {
 				rep.DroppedValues++
 				continue
 			}
-			hr.Zones = append(hr.Zones, HRZone{int(zone), round(lo, 1), round(hi, 1), round(secs, 1)})
+			hr.Zones = append(hr.Zones, HRZone{int(zone), Round(lo, 1), Round(hi, 1), Round(secs, 1)})
 		}
 	}
 	if samples, ok := m["samples"].([]any); ok {
@@ -317,15 +334,19 @@ func sanitizeWorkoutHR(m map[string]any, rep *Report) *WorkoutHeartRate {
 			s, ok := item.(map[string]any)
 			t, okT := num(s["t"])
 			bpm, okB := num(s["bpm"])
-			if i >= MaxHRSamples || !ok || !okT || !okB || t < 0 || t > MaxWorkoutSecs || bpm < 20 || bpm > 260 {
+			if i >= MaxHRSamples || !ok || !okT || !okB || t < 0 || t > MaxWorkoutSecs || bpm < MinBPM || bpm > MaxBPM {
 				rep.DroppedValues++
 				continue
 			}
-			hr.Samples = append(hr.Samples, HRSample{round(t, 1), round(bpm, 1)})
+			hr.Samples = append(hr.Samples, HRSample{Round(t, 1), Round(bpm, 1)})
 		}
 		sort.SliceStable(hr.Samples, func(i, j int) bool { return hr.Samples[i].T < hr.Samples[j].T })
 	}
-	if hr.AvgBPM == nil && hr.MinBPM == nil && hr.MaxBPM == nil && len(hr.Zones) == 0 && len(hr.Samples) == 0 {
+	if hr.AvgBPM == nil && hr.MinBPM == nil && hr.MaxBPM == nil && hr.Recovery1MinBPM == nil && len(hr.Zones) == 0 && len(hr.Samples) == 0 {
+		if hr.MaxReferenceBPM != nil {
+			// A zone reference without any measurement describes nothing.
+			rep.DroppedValues++
+		}
 		return nil
 	}
 	return hr
@@ -341,7 +362,7 @@ func bounded(m map[string]any, key string, lo, hi float64, rep *Report) *float64
 		rep.DroppedValues++
 		return nil
 	}
-	n = round(n, 3)
+	n = Round(n, 3)
 	return &n
 }
 
@@ -364,7 +385,8 @@ func num(v any) (float64, bool) {
 	return f, !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
-func round(v float64, places int) float64 {
+// Round rounds v to the given number of decimal places.
+func Round(v float64, places int) float64 {
 	p := math.Pow(10, float64(places))
 	return math.Round(v*p) / p
 }
@@ -374,7 +396,7 @@ func validDate(s string) bool {
 		return false
 	}
 	t, err := time.Parse("2006-01-02", s)
-	return err == nil && t.Year() >= 1970 && t.Year() <= 2200
+	return err == nil && t.Year() >= minYear && t.Year() <= maxYear
 }
 
 func validTimestamp(s string) bool {
@@ -423,13 +445,16 @@ func MergeDay(old, newer Day) Day {
 	return out
 }
 
-// Number returns the numeric value at group.key, if present.
-func (d Day) Number(path Metric) (float64, bool) {
-	values := d[path.Group]
+// Number returns the value of metric m on this day, if present.
+func (d Day) Number(m Metric) (float64, bool) { return d.Value(m.Group, m.Key) }
+
+// Value returns the finite number at group.key, if present.
+func (d Day) Value(group, key string) (float64, bool) {
+	values := d[group]
 	if values == nil {
 		return 0, false
 	}
-	return num(values[path.Key])
+	return num(values[key])
 }
 
 // String renders a short description for debugging.

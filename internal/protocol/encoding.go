@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Version is the protocol generation encoded in pairing codes and signatures.
@@ -112,19 +113,22 @@ func ParseTime(s string) (time.Time, error) {
 	return t, nil
 }
 
-// cleanLabel trims a human label and removes control characters.
-func cleanLabel(s string, max int) string {
+// MaxLabelLength is the longest agent or device label, in Unicode code points.
+const MaxLabelLength = 64
+
+// CleanLabel normalizes a user-visible name (agent or device label): it trims
+// surrounding whitespace, removes control characters (Unicode category Cc: C0,
+// DEL and C1) and keeps at most MaxLabelLength code points. The iOS app applies
+// the same rule (HB1.cleanLabel).
+func CleanLabel(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
 	}, strings.TrimSpace(s))
-	if len([]rune(s)) > max {
-		s = string([]rune(s)[:max])
+	if runes := []rune(s); len(runes) > MaxLabelLength {
+		s = string(runes[:MaxLabelLength])
 	}
 	return s
 }
-
-// CleanLabel normalizes a user-visible name (agent or device label).
-func CleanLabel(s string) string { return cleanLabel(s, 64) }

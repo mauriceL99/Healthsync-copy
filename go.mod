@@ -1,8 +1,11 @@
 module github.com/mauriceL99/Healthsync-copy
 
-go 1.24
+go 1.24.0
+
+toolchain go1.24.7
 
 require (
+	github.com/muktihari/fit v0.27.2
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.41.0
 	modernc.org/sqlite v1.38.2

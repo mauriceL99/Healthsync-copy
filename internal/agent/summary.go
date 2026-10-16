@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -37,16 +36,16 @@ type MetricStat struct {
 
 // SleepStat summarizes nights in the window.
 type SleepStat struct {
-	Nights        int     `json:"nights"`
-	AvgAsleepMin  float64 `json:"avg_asleep_min"`
-	AvgInBedMin   float64 `json:"avg_in_bed_min,omitempty"`
-	AvgDeepMin    float64 `json:"avg_deep_min,omitempty"`
-	AvgREMMin     float64 `json:"avg_rem_min,omitempty"`
-	AvgCoreMin    float64 `json:"avg_core_min,omitempty"`
-	AvgAwakeMin   float64 `json:"avg_awake_min,omitempty"`
-	NightsUnder7h int     `json:"nights_under_7h"`
-	AvgBedtime    string  `json:"avg_bedtime,omitempty"`
-	AvgWakeTime   string  `json:"avg_wake_time,omitempty"`
+	Nights        int      `json:"nights"`
+	AvgAsleepMin  float64  `json:"avg_asleep_min"`
+	AvgInBedMin   *float64 `json:"avg_in_bed_min,omitempty"`
+	AvgDeepMin    *float64 `json:"avg_deep_min,omitempty"`
+	AvgREMMin     *float64 `json:"avg_rem_min,omitempty"`
+	AvgCoreMin    *float64 `json:"avg_core_min,omitempty"`
+	AvgAwakeMin   *float64 `json:"avg_awake_min,omitempty"`
+	NightsUnder7h int      `json:"nights_under_7h"`
+	AvgBedtime    string   `json:"avg_bedtime,omitempty"`
+	AvgWakeTime   string   `json:"avg_wake_time,omitempty"`
 }
 
 // WorkoutTypeStat aggregates workouts of one activity type.
@@ -87,6 +86,19 @@ type Report struct {
 	Notice       string       `json:"notice"`
 }
 
+// Window limits and defaults shared by the CLI flags and the MCP tool schemas.
+const (
+	// MaxWindowDays caps a report window at about ten years: enough for any
+	// Apple Health history, small enough to keep one query and its JSON bounded.
+	MaxWindowDays = 3660
+	// DefaultSeriesDays and DefaultWorkoutDays are the windows of `series` and
+	// `workouts` (and of the matching MCP tools) when no --days is given.
+	DefaultSeriesDays  = 30
+	DefaultWorkoutDays = 14
+	// DefaultDashboardDays is the window of `dashboard`.
+	DefaultDashboardDays = 30
+)
+
 // Window is an inclusive range of local dates.
 type Window struct {
 	Period   string
@@ -107,8 +119,8 @@ func (w Window) Previous() Window {
 }
 
 // ResolveWindow turns period/days/end into a date window. Without --end the
-// window ends at the most recent stored day.
-func ResolveWindow(period string, days int, end, latest string) (Window, error) {
+// window ends at the most recent stored day, or today when nothing is stored.
+func ResolveWindow(period string, days int, end, latest string, now time.Time) (Window, error) {
 	if days <= 0 {
 		switch period {
 		case "", "week", "weekly":
@@ -127,10 +139,10 @@ func ResolveWindow(period string, days int, end, latest string) (Window, error) 
 	} else {
 		period = fmt.Sprintf("%d days", days)
 	}
-	if days > 3660 {
-		return Window{}, errors.New("window too large (max 3660 days)")
+	if days > MaxWindowDays {
+		return Window{}, fmt.Errorf("window too large (max %d days)", MaxWindowDays)
 	}
-	endDate := firstNonEmpty(end, latest, time.Now().Format("2006-01-02"))
+	endDate := firstNonEmpty(end, latest, now.Format("2006-01-02"))
 	to, err := time.Parse("2006-01-02", endDate)
 	if err != nil {
 		return Window{}, fmt.Errorf("invalid end date %q (use YYYY-MM-DD)", endDate)
@@ -140,7 +152,10 @@ func ResolveWindow(period string, days int, end, latest string) (Window, error) 
 
 // BuildReport computes the summary for window w.
 func BuildReport(ctx context.Context, db *DB, w Window, now time.Time) (Report, error) {
-	loc := db.Location(ctx)
+	loc, err := db.Location(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	prev := w.Previous()
 	days, err := db.Days(ctx, w.FromString(), w.ToString())
 	if err != nil {
@@ -189,9 +204,9 @@ func metricStat(m healthdata.Metric, days, prevDays map[string]healthdata.Day) (
 	if s.DaysWithData == 0 {
 		return s, false
 	}
-	s.Average = round(sum/float64(s.DaysWithData), 2)
+	s.Average = healthdata.Round(sum/float64(s.DaysWithData), 2)
 	if m.Cumulative() {
-		total := round(sum, 2)
+		total := healthdata.Round(sum, 2)
 		s.Total = &total
 	}
 	prevSum, prevN := 0.0, 0
@@ -202,51 +217,95 @@ func metricStat(m healthdata.Metric, days, prevDays map[string]healthdata.Day) (
 		}
 	}
 	if prevN > 0 {
-		pa := round(prevSum/float64(prevN), 2)
-		change := round(s.Average-pa, 2)
+		pa := healthdata.Round(prevSum/float64(prevN), 2)
+		change := healthdata.Round(s.Average-pa, 2)
 		s.PreviousAverage, s.Change = &pa, &change
-		s.Trend = "flat"
+		s.Trend = trend(change, pa)
 		if pa != 0 {
-			pct := round(change/math.Abs(pa)*100, 1)
+			pct := healthdata.Round(change/math.Abs(pa)*100, 1)
 			s.ChangePct = &pct
-			if pct >= 3 {
-				s.Trend = "up"
-			} else if pct <= -3 {
-				s.Trend = "down"
-			}
 		}
 	}
 	return s, true
 }
 
+// trendThresholdPct is the relative change below which a metric reads as
+// "flat": night-to-night and day-to-day noise of wearable data is larger than
+// that, so smaller moves would be over-interpreted by people and agents.
+const trendThresholdPct = 3.0
+
+// trend classifies a change against the previous period's average. With a
+// previous average of 0 there is no percentage, so the direction alone counts.
+func trend(change, previous float64) string {
+	if previous == 0 {
+		switch {
+		case change > 0:
+			return "up"
+		case change < 0:
+			return "down"
+		}
+		return "flat"
+	}
+	pct := change / math.Abs(previous) * 100
+	switch {
+	case pct >= trendThresholdPct:
+		return "up"
+	case pct <= -trendThresholdPct:
+		return "down"
+	}
+	return "flat"
+}
+
+// nightsUnderMin is the 7-hour threshold used for "nights under 7 h".
+const nightsUnderMin = 7 * 60
+
+// meanAcc averages only the nights that actually report a value, so a stage
+// missing from some nights does not count as 0 minutes.
+type meanAcc struct {
+	sum float64
+	n   int
+}
+
+func (m *meanAcc) add(v float64, ok bool) {
+	if ok {
+		m.sum += v
+		m.n++
+	}
+}
+
+func (m meanAcc) mean() *float64 {
+	if m.n == 0 {
+		return nil
+	}
+	v := healthdata.Round(m.sum/float64(m.n), 1)
+	return &v
+}
+
 func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 	var st SleepStat
-	var asleep, inBed, deep, rem, core, awake float64
+	var asleep float64
+	var inBed, deep, rem, core, awake meanAcc
 	var bedMinutes, wakeMinutes []float64
 	for _, date := range SortedDates(days) {
-		sleep := days[date]["sleep"]
+		day := days[date]
+		sleep := day["sleep"]
 		if sleep == nil {
 			continue
 		}
-		a, ok := num(sleep["asleep_min"])
+		a, ok := day.Value("sleep", "asleep_min")
 		if !ok {
 			continue
 		}
 		st.Nights++
 		asleep += a
-		if a < 420 {
+		if a < nightsUnderMin {
 			st.NightsUnder7h++
 		}
-		v, _ := num(sleep["in_bed_min"])
-		inBed += v
-		v, _ = num(sleep["deep_min"])
-		deep += v
-		v, _ = num(sleep["rem_min"])
-		rem += v
-		v, _ = num(sleep["core_min"])
-		core += v
-		v, _ = num(sleep["awake_min"])
-		awake += v
+		inBed.add(day.Value("sleep", "in_bed_min"))
+		deep.add(day.Value("sleep", "deep_min"))
+		rem.add(day.Value("sleep", "rem_min"))
+		core.add(day.Value("sleep", "core_min"))
+		awake.add(day.Value("sleep", "awake_min"))
 		if t, ok := sleepTime(sleep["bedtime"], loc); ok {
 			bedMinutes = append(bedMinutes, t)
 		}
@@ -257,9 +316,8 @@ func sleepStat(days map[string]healthdata.Day, loc *time.Location) *SleepStat {
 	if st.Nights == 0 {
 		return nil
 	}
-	n := float64(st.Nights)
-	st.AvgAsleepMin, st.AvgInBedMin = round(asleep/n, 1), round(inBed/n, 1)
-	st.AvgDeepMin, st.AvgREMMin, st.AvgCoreMin, st.AvgAwakeMin = round(deep/n, 1), round(rem/n, 1), round(core/n, 1), round(awake/n, 1)
+	st.AvgAsleepMin = healthdata.Round(asleep/float64(st.Nights), 1)
+	st.AvgInBedMin, st.AvgDeepMin, st.AvgREMMin, st.AvgCoreMin, st.AvgAwakeMin = inBed.mean(), deep.mean(), rem.mean(), core.mean(), awake.mean()
 	st.AvgBedtime, st.AvgWakeTime = clockMean(bedMinutes), clockMean(wakeMinutes)
 	return &st
 }
@@ -299,7 +357,7 @@ func workoutStat(ws, prev []healthdata.Workout) WorkoutStat {
 	st := WorkoutStat{ByType: []WorkoutTypeStat{}}
 	byType := map[string]*WorkoutTypeStat{}
 	hrWeighted := map[string][2]float64{}
-	zones := make([]float64, 5)
+	zones := make([]float64, healthdata.HeartRateZones)
 	hasZones := false
 	for _, w := range ws {
 		minutes := workoutMinutes(w)
@@ -336,9 +394,9 @@ func workoutStat(ws, prev []healthdata.Workout) WorkoutStat {
 		st.PreviousMinutes += workoutMinutes(w)
 	}
 	for typ, t := range byType {
-		t.Minutes, t.DistanceKm, t.EnergyKcal = round(t.Minutes, 1), round(t.DistanceKm, 2), round(t.EnergyKcal, 1)
+		t.Minutes, t.DistanceKm, t.EnergyKcal = healthdata.Round(t.Minutes, 1), healthdata.Round(t.DistanceKm, 2), healthdata.Round(t.EnergyKcal, 1)
 		if acc := hrWeighted[typ]; acc[1] > 0 {
-			avg := round(acc[0]/acc[1], 1)
+			avg := healthdata.Round(acc[0]/acc[1], 1)
 			t.AvgHR = &avg
 		}
 		st.ByType = append(st.ByType, *t)
@@ -349,10 +407,10 @@ func workoutStat(ws, prev []healthdata.Workout) WorkoutStat {
 		}
 		return st.ByType[i].Type < st.ByType[j].Type
 	})
-	st.Minutes, st.EnergyKcal, st.DistanceKm, st.PreviousMinutes = round(st.Minutes, 1), round(st.EnergyKcal, 1), round(st.DistanceKm, 2), round(st.PreviousMinutes, 1)
+	st.Minutes, st.EnergyKcal, st.DistanceKm, st.PreviousMinutes = healthdata.Round(st.Minutes, 1), healthdata.Round(st.EnergyKcal, 1), healthdata.Round(st.DistanceKm, 2), healthdata.Round(st.PreviousMinutes, 1)
 	if hasZones {
 		for i := range zones {
-			zones[i] = round(zones[i], 1)
+			zones[i] = healthdata.Round(zones[i], 1)
 		}
 		st.ZoneMinutes = zones
 	}
@@ -363,9 +421,7 @@ func workoutMinutes(w healthdata.Workout) float64 {
 	if w.DurationS != nil {
 		return *w.DurationS / 60
 	}
-	start, _ := time.Parse(time.RFC3339Nano, w.Start)
-	end, _ := time.Parse(time.RFC3339Nano, w.End)
-	return end.Sub(start).Minutes()
+	return w.EndTime().Sub(w.StartTime()).Minutes()
 }
 
 func highlights(r Report, days map[string]healthdata.Day) []string {
@@ -415,7 +471,7 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 			if i == 4 {
 				break
 			}
-			types = append(types, fmt.Sprintf("%s ×%d", strings.ReplaceAll(t.Type, "_", " "), t.Count))
+			types = append(types, fmt.Sprintf("%s ×%d", workoutLabel(t.Type), t.Count))
 		}
 		line := fmt.Sprintf("%d workouts, %s in total (%s)", r.Workouts.Count, formatDuration(r.Workouts.Minutes), strings.Join(types, ", "))
 		if r.Workouts.PreviousCount > 0 {
@@ -427,12 +483,8 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 	}
 	goalDays, measured := 0, 0
 	for _, day := range days {
-		a := day["activity"]
-		if a == nil {
-			continue
-		}
-		energy, ok1 := num(a["active_energy_kcal"])
-		goal, ok2 := num(a["move_goal_kcal"])
+		energy, ok1 := day.Value("activity", "active_energy_kcal")
+		goal, ok2 := day.Value("activity", "move_goal_kcal")
 		if ok1 && ok2 && goal > 0 {
 			measured++
 			if energy >= goal {
@@ -446,7 +498,7 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 	if s := stat("body.weight_kg"); s != nil && s.DaysWithData > 1 {
 		first := 0.0
 		for _, date := range SortedDates(days) {
-			if v, ok := days[date].Number(healthdata.Metric{Group: "body", Key: "weight_kg"}); ok {
+			if v, ok := days[date].Value("body", "weight_kg"); ok {
 				first = v
 				break
 			}
@@ -457,16 +509,6 @@ func highlights(r Report, days map[string]healthdata.Day) []string {
 		out = append(out, "No synced data in this period. Run `healthbridge fetch` after syncing the iPhone app.")
 	}
 	return out
-}
-
-func num(v any) (float64, bool) {
-	f, ok := v.(float64)
-	return f, ok && !math.IsNaN(f) && !math.IsInf(f, 0)
-}
-
-func round(v float64, places int) float64 {
-	p := math.Pow(10, float64(places))
-	return math.Round(v*p) / p
 }
 
 func signed(v float64, places int) string {

@@ -3,14 +3,23 @@ import SwiftUI
 // MARK: - Buttons
 
 extension View {
-    /// Full-width prominent button used for the main action of a screen.
+    /// Prominent button for the main action of a screen. It sizes to its label; give the
+    /// label `.frame(maxWidth: .infinity)` for a full-width button.
     func primaryActionStyle() -> some View {
         buttonStyle(.borderedProminent)
             .controlSize(.large)
             .buttonBorderShape(.roundedRectangle(radius: 14))
     }
 
-    /// Full-width secondary button.
+    /// Rounded background for selectable rows and input fields in onboarding.
+    func tileBackground(cornerRadius: CGFloat = 14) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+    }
+
+    /// Secondary button; sizes to its label like `primaryActionStyle()`.
     func secondaryActionStyle() -> some View {
         buttonStyle(.bordered)
             .controlSize(.large)
@@ -21,10 +30,11 @@ extension View {
 // MARK: - Cards
 
 struct Card<Content: View>: View {
+    var spacing: CGFloat = 12
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: spacing) {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -39,7 +49,6 @@ struct Card<Content: View>: View {
 struct CardHeader: View {
     let title: String
     let symbol: String
-    var trailing: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -48,11 +57,6 @@ struct CardHeader: View {
             Text(title)
                 .font(.headline)
             Spacer()
-            if let trailing {
-                Text(trailing)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 }

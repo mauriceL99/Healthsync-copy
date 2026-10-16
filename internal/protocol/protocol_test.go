@@ -243,3 +243,13 @@ func TestInflateLimit(t *testing.T) {
 		t.Fatal("inflate failed")
 	}
 }
+
+func TestCleanLabelRemovesAllControlCharacters(t *testing.T) {
+	got := CleanLabel("  Desk\x00\x1b[31m\u0085\u009b Agent\x7f  ")
+	if got != "Desk[31m Agent" {
+		t.Fatalf("CleanLabel: %q", got)
+	}
+	if long := CleanLabel(strings.Repeat("ä", MaxLabelLength+5)); len([]rune(long)) != MaxLabelLength {
+		t.Fatalf("length: %d", len([]rune(long)))
+	}
+}

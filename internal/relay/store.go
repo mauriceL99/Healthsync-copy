@@ -58,10 +58,9 @@ CREATE INDEX IF NOT EXISTS nonces_by_expiry ON nonces(expires_at);
 
 // Errors returned by the store.
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrConflict       = errors.New("conflict")
-	ErrDeviceUnlinked = errors.New("device unlinked")
-	ErrReplay         = errors.New("nonce already used")
+	ErrNotFound = errors.New("not found")
+	ErrConflict = errors.New("conflict")
+	ErrReplay   = errors.New("nonce already used")
 )
 
 // Store is the relay's SQLite persistence.
@@ -79,16 +78,17 @@ type Account struct {
 }
 
 // Device is a linked (or formerly linked) iPhone.
+// Its API representation is built by deviceJSON in server.go.
 type Device struct {
-	ID         string     `json:"device_id"`
-	Account    string     `json:"-"`
-	SigPub     []byte     `json:"-"`
-	Name       string     `json:"name"`
-	Platform   string     `json:"platform"`
-	AppVersion string     `json:"app_version"`
-	LinkedAt   time.Time  `json:"-"`
-	LastSeenAt time.Time  `json:"-"`
-	UnlinkedAt *time.Time `json:"-"`
+	ID         string
+	Account    string
+	SigPub     []byte
+	Name       string
+	Platform   string
+	AppVersion string
+	LinkedAt   time.Time
+	LastSeenAt time.Time
+	UnlinkedAt *time.Time
 }
 
 // OpenStore opens (and migrates) the relay database at path.
@@ -155,9 +155,11 @@ func (s *Store) Account(ctx context.Context, id string) (Account, error) {
 	return a, err
 }
 
-// TouchAccount updates last_seen_at.
-func (s *Store) TouchAccount(ctx context.Context, id string, now time.Time) {
-	_, _ = s.db.ExecContext(ctx, `UPDATE accounts SET last_seen_at = ? WHERE account = ?`, now.Unix(), id)
+// TouchAccount updates last_seen_at. It is informational only (shown in status
+// responses), so a failed update must not fail the request; it is logged instead.
+func (s *Store) TouchAccount(ctx context.Context, id string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE accounts SET last_seen_at = ? WHERE account = ?`, now.Unix(), id)
+	return err
 }
 
 // DeleteAccount removes an account with its devices and envelopes.
@@ -220,9 +222,11 @@ func (s *Store) LinkDevice(ctx context.Context, d Device, now time.Time) (Device
 	return d, tx.Commit()
 }
 
-// TouchDevice updates last_seen_at.
-func (s *Store) TouchDevice(ctx context.Context, id string, now time.Time) {
-	_, _ = s.db.ExecContext(ctx, `UPDATE devices SET last_seen_at = ? WHERE device_id = ?`, now.Unix(), id)
+// TouchDevice updates last_seen_at. It is informational only (shown in status
+// responses), so a failed update must not fail the request; it is logged instead.
+func (s *Store) TouchDevice(ctx context.Context, id string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE devices SET last_seen_at = ? WHERE device_id = ?`, now.Unix(), id)
+	return err
 }
 
 // UnlinkDevice marks a device as unlinked.
@@ -236,25 +240,20 @@ func (s *Store) UnlinkDevice(ctx context.Context, id string, now time.Time) (boo
 }
 
 // AddEnvelope stores an envelope; a duplicate ID returns the existing seq.
+// INSERT … ON CONFLICT DO NOTHING keeps this correct when a device retries an
+// upload while the first attempt is still being processed.
 func (s *Store) AddEnvelope(ctx context.Context, e protocol.Envelope, now time.Time) (int64, error) {
 	body, err := json.Marshal(e)
 	if err != nil {
 		return 0, err
 	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO envelopes(account, id, body, size, received_at) VALUES(?,?,?,?,?)
+		ON CONFLICT(account, id) DO NOTHING`, e.Account, e.ID, string(body), len(e.Ct), now.Unix()); err != nil {
+		return 0, err
+	}
 	var seq int64
 	err = s.db.QueryRowContext(ctx, `SELECT seq FROM envelopes WHERE account = ? AND id = ?`, e.Account, e.ID).Scan(&seq)
-	if err == nil {
-		return seq, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, err
-	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO envelopes(account, id, body, size, received_at) VALUES(?,?,?,?,?)`,
-		e.Account, e.ID, string(body), len(e.Ct), now.Unix())
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
+	return seq, err
 }
 
 // Envelopes lists envelopes after seq, limited by count and total ciphertext size.

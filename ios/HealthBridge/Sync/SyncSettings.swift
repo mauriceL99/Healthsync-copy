@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum SyncMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case manual
@@ -48,8 +49,11 @@ enum SyncInterval: Int, Codable, CaseIterable, Identifiable, Sendable {
         rawValue == 1 ? "Every hour" : "Every \(rawValue) hours"
     }
 
-    var shortTitle: String {
-        "\(rawValue)h"
+    /// "1, 3, 6, 12 or 24 hours", built from the cases so texts never drift.
+    static var choicesText: String {
+        let values = allCases.map { String($0.rawValue) }
+        guard let last = values.last else { return "" }
+        return values.dropLast().joined(separator: ", ") + " or " + last + " hours"
     }
 }
 
@@ -62,19 +66,15 @@ enum HistoryWindow: Int, Codable, CaseIterable, Identifiable, Sendable {
     var id: Int { rawValue }
 
     var title: String {
-        switch self {
-        case .week: return "7 days"
-        case .month: return "30 days"
-        case .quarter: return "90 days"
-        case .year: return "365 days"
-        }
+        "\(rawValue) days"
     }
 
     var requiresPro: Bool {
-        self != .week
+        rawValue > Self.freeLimit.rawValue
     }
 
     static let freeLimit: HistoryWindow = .week
+    static let proLimit: HistoryWindow = .year
 }
 
 /// User preferences. Stored as JSON in UserDefaults (no health data).
@@ -120,8 +120,12 @@ struct SyncSettings: Codable, Equatable, Sendable {
     }
 
     /// The history window that is actually used for the current entitlement.
+    func effectiveHistoryWindow(isPro: Bool) -> HistoryWindow {
+        !isPro && historyWindow.requiresPro ? .freeLimit : historyWindow
+    }
+
     func effectiveHistoryDays(isPro: Bool) -> Int {
-        isPro ? historyWindow.rawValue : min(historyWindow.rawValue, HistoryWindow.freeLimit.rawValue)
+        effectiveHistoryWindow(isPro: isPro).rawValue
     }
 
     func effectiveMode(isPro: Bool) -> SyncMode {
@@ -141,6 +145,8 @@ struct SyncState: Codable, Equatable, Sendable {
     /// Number of days covered by the last completed backfill (0 = none yet).
     var backfilledDays: Int = 0
     var nextScheduledSync: Date?
+    /// Why "On new Health data" cannot work right now (HealthKit refused background delivery).
+    var backgroundDeliveryProblem: String?
 
     init() {}
 
@@ -151,6 +157,7 @@ struct SyncState: Codable, Equatable, Sendable {
         lastError = try? container.decode(String.self, forKey: .lastError)
         backfilledDays = (try? container.decode(Int.self, forKey: .backfilledDays)) ?? 0
         nextScheduledSync = try? container.decode(Date.self, forKey: .nextScheduledSync)
+        backgroundDeliveryProblem = try? container.decode(String.self, forKey: .backgroundDeliveryProblem)
     }
 }
 
@@ -214,7 +221,19 @@ enum SettingsStore {
     /// code is idempotent on the relay (docs/PROTOCOL.md §5).
     static func prepareFirstLaunchIfNeeded() {
         guard !defaults.bool(forKey: installedKey) else { return }
-        PairingStore.delete()
+        do {
+            try PairingStore.delete()
+        } catch {
+            // Keychain not writable right now: try again on the next launch. A pairing saved
+            // in the meantime replaces the stale record and calls `markInstalled()`.
+            Log.storage.error("Removing the stale pairing record failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        markInstalled()
+    }
+
+    /// Records that no pairing from a previous install is left in the keychain.
+    static func markInstalled() {
         defaults.set(true, forKey: installedKey)
     }
 }
@@ -231,9 +250,11 @@ enum EntitlementCache {
 }
 
 enum AppInfo {
+    /// The marketing version, or "0" when it is missing or unusable (never a plausible
+    /// made-up version).
     static var version: String {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
-        return sanitizedVersion(raw) ?? "1.0.0"
+        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        return sanitizedVersion(raw) ?? "0"
     }
 
     static var build: String {
@@ -275,12 +296,14 @@ enum AppInfo {
         value.range(of: #"^[A-Za-z]{2,16}[0-9]{0,3}(,[0-9]{1,3})?$"#, options: .regularExpression) != nil
     }
 
-    /// IANA time zone name matching `^[A-Za-z][A-Za-z0-9_+./-]{1,63}$`.
-    static var timeZoneIdentifier: String {
+    /// IANA time zone name matching `^[A-Za-z][A-Za-z0-9_+./-]{1,63}$`, or nil. Day keys
+    /// are always local, so claiming "UTC" for an unusual identifier would be wrong;
+    /// omitting the field lets the agent know the zone is unknown.
+    static var timeZoneIdentifier: String? {
         let identifier = TimeZone.current.identifier
         if identifier.range(of: #"^[A-Za-z][A-Za-z0-9_+./-]{1,63}$"#, options: .regularExpression) != nil {
             return identifier
         }
-        return "UTC"
+        return nil
     }
 }

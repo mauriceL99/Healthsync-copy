@@ -7,13 +7,21 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/mauriceL99/Healthsync-copy/internal/client"
 	"github.com/mauriceL99/Healthsync-copy/internal/healthdata"
 	"github.com/mauriceL99/Healthsync-copy/internal/protocol"
+	"github.com/mauriceL99/Healthsync-copy/internal/training/fitsample"
 )
+
+// simulatorChunkDays mirrors SyncPlan.chunkDays in the iOS app
+// (ios/HealthBridge/Sync/SyncEngine.swift) so uploads look like the real app's.
+const simulatorChunkDays = 30
 
 // SimulateOptions configures `healthbridge dev simulate-device`.
 type SimulateOptions struct {
@@ -25,15 +33,21 @@ type SimulateOptions struct {
 }
 
 // SimulateDevice acts like the iPhone app with synthetic data: it links a
-// throwaway device with the pairing code, encrypts a backfill for the agent
-// key and uploads it. It is meant for demos and end-to-end tests.
+// throwaway device with the pairing code, encrypts the history in chunks for
+// the agent key and uploads them. All chunks are sent as `backfill` except the
+// newest, which is sent as `sync`, so both envelope kinds are exercised. It is
+// meant for demos and end-to-end tests.
 func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 	p, err := protocol.DecodePairing(o.PairingCode)
 	if err != nil {
 		return err
 	}
-	secret, _ := protocol.DecodeB64U(p.Secret, 32)
-	encBytes, _ := protocol.DecodeB64(p.Enc, 32)
+	if o.Days <= 0 {
+		return fmt.Errorf("--days must be positive, got %d", o.Days)
+	}
+	// DecodePairing validated both fields, so decoding cannot fail here.
+	secret, _ := protocol.DecodeB64U(p.Secret, protocol.SecretSize)
+	encBytes, _ := protocol.DecodeB64(p.Enc, protocol.PublicKeySize)
 	recipient, err := ecdh.X25519().NewPublicKey(encBytes)
 	if err != nil {
 		return err
@@ -46,12 +60,15 @@ func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 	if err != nil {
 		return err
 	}
-	c, err := client.New(p.Relay, protocol.KeyNewDevice, devPriv, env.timeout())
+	c, err := client.New(p.Relay, protocol.KeyNewDevice, devPriv, relayTimeout)
 	if err != nil {
 		return err
 	}
 	c.Now = env.now
-	deviceID, err := c.LinkDevice(ctx, p.Account, secret, devPub, "HealthBridge Simulator", "simulator", "dev")
+	deviceID, err := c.LinkDevice(ctx, client.DeviceLink{
+		Account: p.Account, Secret: secret, DeviceSig: devPub,
+		Name: "HealthBridge Simulator", Platform: "simulator", AppVersion: "dev",
+	})
 	if err != nil {
 		if client.IsCode(err, "device_already_linked") {
 			return fmt.Errorf("%w (run `healthbridge unlink` first)", err)
@@ -59,14 +76,14 @@ func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 		return err
 	}
 	dev := c.WithKey(protocol.DeviceKey(deviceID))
-	safety, _ := p.SafetyCode()
+	safety, err := p.SafetyCode()
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(env.Out, "Simulated device %s linked to %q (safety code %s).\n", deviceID, p.Name, safety)
 
-	if o.Days <= 0 {
-		o.Days = 30
-	}
 	batch := healthdata.Synthetic(env.now(), o.Days, loc, o.Seed)
-	chunks := chunkBatch(batch, 30)
+	chunks := chunkBatch(batch, simulatorChunkDays, loc)
 	var envelopes []protocol.Envelope
 	for i, chunk := range chunks {
 		plain, err := json.Marshal(chunk)
@@ -99,14 +116,10 @@ func SimulateDevice(ctx context.Context, env Env, o SimulateOptions) error {
 
 // chunkBatch splits a synthetic batch into batches of at most n days, with
 // each workout in the chunk that contains its day.
-func chunkBatch(batch map[string]any, n int) []map[string]any {
+func chunkBatch(batch map[string]any, n int, loc *time.Location) []map[string]any {
 	days, _ := batch["days"].(map[string]any)
 	workouts, _ := batch["workouts"].([]any)
-	dates := make([]string, 0, len(days))
-	for d := range days {
-		dates = append(dates, d)
-	}
-	sort.Strings(dates)
+	dates := slices.Sorted(maps.Keys(days))
 	var out []map[string]any
 	for start := 0; start < len(dates); start += n {
 		end := min(start+n, len(dates))
@@ -125,12 +138,7 @@ func chunkBatch(batch map[string]any, n int) []map[string]any {
 			if err != nil {
 				continue
 			}
-			local := t.In(time.Local).Format("2006-01-02")
-			if tz, ok := batch["timezone"].(string); ok {
-				if loc, err := time.LoadLocation(tz); err == nil {
-					local = t.In(loc).Format("2006-01-02")
-				}
-			}
+			local := t.In(loc).Format("2006-01-02")
 			if local >= dates[start] && local <= dates[end-1] {
 				ws = append(ws, w)
 			}
@@ -139,4 +147,35 @@ func chunkBatch(batch map[string]any, n int) []map[string]any {
 		out = append(out, chunk)
 	}
 	return out
+}
+
+// SampleActivityPrefix starts the IDs of the synthetic sample workouts.
+var SampleActivityPrefix = fmt.Sprintf("fit-%d-", fitsample.Serial)
+
+// WriteSampleFIT writes synthetic workout files (a run, a strength session and
+// a HYROX simulation on the three days before now) into dir. Their IDs only
+// depend on the day, so writing and importing them again on the same day adds
+// nothing twice.
+func WriteSampleFIT(dir string, now time.Time) ([]string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	day := time.Date(now.Year(), now.Month(), now.Day(), 6, 30, 0, 0, time.UTC)
+	samples := []struct {
+		name string
+		data []byte
+	}{
+		{"healthbridge-sample-run.fit", fitsample.Run(day.AddDate(0, 0, -3))},
+		{"healthbridge-sample-strength.fit", fitsample.Strength(day.AddDate(0, 0, -2))},
+		{"healthbridge-sample-hyrox.fit", fitsample.Hyrox(day.AddDate(0, 0, -1))},
+	}
+	var paths []string
+	for _, s := range samples {
+		p := filepath.Join(dir, s.name)
+		if err := writeNewPrivate(p, s.data, true); err != nil {
+			return paths, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, nil
 }
