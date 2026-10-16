@@ -38,8 +38,10 @@ kompatibel. Name und Branding sind bewusst andere.
 
 ## Schnellstart
 
-> **Auf dem Mac mit iPhone:** Die Schritt-für-Schritt-Anleitung von Xcode bis Claude Code
-> steht in [`docs/MAC_START.md`](docs/MAC_START.md).
+> **Schritt für Schritt, ohne Vorkenntnisse:**
+> - App aufs iPhone und Agent auf dem Mac (Claude Code): [`docs/MAC_START.md`](docs/MAC_START.md)
+> - Agent rund um die Uhr auf einem kleinen Server, nutzbar mit **ChatGPT**, Claude
+>   (Browser und Apps) und Claude Code: [`docs/SERVER_START.md`](docs/SERVER_START.md)
 
 ### 1. Bauen
 
@@ -55,9 +57,12 @@ make e2e              # Demo ohne iPhone: Relay + simuliertes Gerät + Summary
 # lokal / im LAN (http ist nur für localhost und private Netze erlaubt)
 bin/healthbridge-relay --addr :8787 --db relay.db
 
-# öffentlich mit automatischem HTTPS; nur wer das Token kennt, kann Accounts anlegen
+# nur das Relay öffentlich mit automatischem HTTPS; nur wer das Token kennt, kann Accounts anlegen
 HB_DOMAIN=relay.example.com HB_RELAY_REGISTRATION_TOKEN=$(openssl rand -hex 16) \
-  docker compose -f deploy/docker-compose.yml up -d
+  docker compose -f deploy/docker-compose.yml up -d relay caddy
+
+# Relay und Agent zusammen auf einem Server (für ChatGPT/Claude), alles geführt:
+sudo ./deploy/setup.sh        # Anleitung: docs/SERVER_START.md
 ```
 
 Wenn das Relay ein Token verlangt, gibst du es beim Onboarding mit
@@ -96,6 +101,17 @@ claude mcp add healthbridge -- healthbridge mcp          # Claude Code (nur MCP)
 codex mcp add healthbridge -- healthbridge mcp           # Codex
 ```
 
+Läuft der Agent als Dienst auf einem Server (`healthbridge serve`, siehe
+[`docs/SERVER_START.md`](docs/SERVER_START.md)), verbinden sich ChatGPT, Claude (Browser
+und Apps) und Claude Code über die geheime Connector-Adresse
+(`healthbridge connector-url`):
+
+```bash
+claude mcp add --transport http healthbridge https://…/mcp/…   # Claude Code
+```
+
+In ChatGPT und auf claude.ai trägst du dieselbe Adresse als eigenen Connector ein.
+
 MCP-Tools: `health_summary`, `health_metric_series`, `health_workouts`,
 `health_list_metrics`, `health_status`, `health_sync`. Details stehen unter
 [`integrations/`](integrations/).
@@ -116,6 +132,8 @@ MCP-Tools: `health_summary`, `health_metric_series`, `health_workouts`,
 | `export [--format csv\|ndjson]` | Rohdaten-Export |
 | `unlink [--delete-relay-account]` | iPhone entkoppeln (lokale Daten bleiben erhalten) |
 | `mcp` | MCP-Server über stdio |
+| `serve [--addr :8788] [--fetch-every 15m]` | Dienst: holt regelmäßig ab und beantwortet MCP über HTTP unter `/mcp/<geheim>` |
+| `connector-url [--public-url URL] [--rotate]` | geheime Connector-Adresse für `serve` anzeigen bzw. neu erzeugen |
 | `self-test` | Offline-Selbsttest |
 | `dev simulate-device` | simuliertes iPhone mit synthetischen Daten |
 
@@ -138,6 +156,10 @@ solltest du die Festplattenverschlüsselung aktivieren.
 * **Prompt-Injection-Schutz:** Entschlüsselte Daten werden gegen eine Allowlist geprüft
   (bekannte Keys, Wertebereiche, String-Regexes). Freitext erreicht den Agenten nie,
   und jede Ausgabe ist als Daten, nicht als Anweisung, gekennzeichnet.
+* **Server-Modus (`serve`):** Der Agent entschlüsselt dann auf dem eigenen Server statt
+  auf dem eigenen Rechner. Die Connector-Adresse enthält ein 256-Bit-Geheimnis und ist
+  der einzige Zugangsschutz (nur lesend). Sie wird nicht protokolliert und lässt sich
+  mit `connector-url --rotate` sofort ersetzen.
 * **Kein Medizinprodukt:** HealthBridge ist für Wellness und Automatisierung gedacht,
   nicht für Diagnosen.
 

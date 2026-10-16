@@ -6,6 +6,21 @@ Funktionen sind freigeschaltet, es gibt kein Abo und keinen App-Store-Kontakt.
 
 Zeitbedarf: etwa 1 Stunde, davon der größte Teil Xcode-Download.
 
+**Welcher Weg?** Die App kommt immer über den Mac aufs iPhone (Schritte 1–3). Danach
+gibt es zwei Wege:
+
+| | Agent auf dem Mac (Schritte 4–5 hier) | Agent auf eigenem Server ([`SERVER_START.md`](SERVER_START.md)) |
+| --- | --- | --- |
+| Läuft ohne eingeschalteten Mac | nein | **ja** |
+| ChatGPT | nein | **ja** |
+| Claude (Browser, Apps) | nein | **ja** |
+| Claude Code am Mac | ja | ja |
+| Kosten | keine | kleiner Mietserver, ca. 4–7 €/Monat |
+| Wo die entschlüsselten Daten liegen | nur auf deinem Mac | auf deinem gemieteten Server |
+
+Wenn du ChatGPT nutzen willst oder der Mac nicht ständig laufen soll: nach Schritt 3
+mit [`SERVER_START.md`](SERVER_START.md) weitermachen.
+
 ## Vorab: kostenlose oder bezahlte Apple-ID?
 
 | | Kostenlose Apple-ID („Personal Team“) | Apple Developer Program (99 €/Jahr) |
@@ -133,16 +148,18 @@ Das Relay braucht dafür eine HTTPS-Adresse, die das iPhone von überall erreich
   Variante A starten und mit `tailscale serve` per HTTPS freigeben (siehe die
   Tailscale-Doku zu `tailscale serve`). Die Adresse hat die Form
   `https://<mac-name>.<tailnet>.ts.net`. Auch hier muss der Mac wach sein.
-* **Eigener kleiner Server** (immer erreichbar): `deploy/docker-compose.yml` mit Caddy
-  und automatischem HTTPS, siehe README, Abschnitt „Relay betreiben“.
+* **Eigener kleiner Server** (immer erreichbar, auch für ChatGPT): Dann läuft der Agent
+  gleich mit auf dem Server, und der Mac wird gar nicht mehr gebraucht. Anleitung:
+  [`SERVER_START.md`](SERVER_START.md).
 
-Wechsel von A nach B:
+Wechsel von Tailscale zu einer anderen Relay-Adresse:
 
 ```bash
 healthbridge onboard --rotate --relay https://<neue-adresse>
 ```
 
-Danach in der App unter Settings **Unpair** wählen und den neuen QR-Code scannen.
+Danach in der App unter Settings **Unpair this iPhone** wählen und den neuen QR-Code
+scannen.
 
 ## 5. Mit Claude Code verbinden
 
@@ -150,13 +167,18 @@ Danach in der App unter Settings **Unpair** wählen und den neuen QR-Code scanne
 claude mcp add healthbridge -- healthbridge mcp
 ```
 
+(Läuft der Agent auf dem Server, stattdessen die Connector-Adresse verwenden:
+`claude mcp add --transport http healthbridge https://…/mcp/…`, siehe
+[`SERVER_START.md`](SERVER_START.md), Schritt 6c.)
+
 Dann zum Beispiel fragen: „Wie habe ich diese Woche geschlafen?“ oder „Vergleiche meine
 Ruhepuls-Werte mit dem Vormonat.“ Codex und andere Agenten: siehe `integrations/`.
 
 ## 6. Für Freunde
 
-* Jeder Freund braucht einen **eigenen Agenten** (die CLI auf seinem Rechner). Die
-  Gesundheitsdaten sind für genau diesen Agenten verschlüsselt.
+* Jeder Freund braucht einen **eigenen Agenten** (auf seinem Rechner oder einem eigenen
+  Server). Die Gesundheitsdaten sind für genau diesen Agenten verschlüsselt. Würde ein
+  Freund mit deinem QR-Code koppeln, landeten seine Daten bei dir.
 * Ein Relay aus Variante B kann für alle gemeinsam laufen. Für ein Relay im Internet ein
   Registrierungs-Token setzen (`healthbridge-relay --registration-token <geheim>`). Freunde
   übergeben es beim Onboarding mit `--relay-token <geheim>`.
