@@ -8,16 +8,21 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/mauriceL99/Healthsync-copy/internal/healthdata"
 	"github.com/mauriceL99/Healthsync-copy/internal/version"
 )
 
-// MCP implements a minimal Model Context Protocol server (JSON-RPC 2.0 over
-// newline-delimited stdio) exposing the local health store as tools.
+// MCP implements a minimal Model Context Protocol server exposing the local
+// health store as tools, over newline-delimited stdio (Serve) or Streamable
+// HTTP (HTTPHandler, used by `healthbridge serve`).
 type MCP struct {
 	Env      Env
 	StateDir string
+	// Lock, if set, is held during tool calls; `serve` shares it with its
+	// background fetch so both never open the state directory at once.
+	Lock sync.Locker
 }
 
 var supportedMCPVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
@@ -99,24 +104,41 @@ func (m *MCP) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 		var req rpcRequest
 		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": nil, "error": rpcError{-32700, "parse error"}})
+			_ = enc.Encode(parseErrorReply())
 			continue
 		}
-		result, rerr := m.handle(ctx, req)
-		if len(req.ID) == 0 { // notification
+		reply := m.respond(ctx, req)
+		if reply == nil {
 			continue
 		}
-		resp := map[string]any{"jsonrpc": "2.0", "id": req.ID}
-		if rerr != nil {
-			resp["error"] = rerr
-		} else {
-			resp["result"] = result
-		}
-		if err := enc.Encode(resp); err != nil {
+		if err := enc.Encode(reply); err != nil {
 			return err
 		}
 	}
 	return scanner.Err()
+}
+
+func parseErrorReply() map[string]any {
+	return map[string]any{"jsonrpc": "2.0", "id": nil, "error": rpcError{-32700, "parse error"}}
+}
+
+// respond handles one JSON-RPC message and returns the reply, or nil for
+// notifications and for responses the client sends back.
+func (m *MCP) respond(ctx context.Context, req rpcRequest) map[string]any {
+	if req.Method == "" {
+		return nil
+	}
+	result, rerr := m.handle(ctx, req)
+	if len(req.ID) == 0 {
+		return nil
+	}
+	reply := map[string]any{"jsonrpc": "2.0", "id": req.ID}
+	if rerr != nil {
+		reply["error"] = rerr
+	} else {
+		reply["result"] = result
+	}
+	return reply
 }
 
 func (m *MCP) handle(ctx context.Context, req rpcRequest) (any, *rpcError) {
@@ -151,6 +173,10 @@ func (m *MCP) handle(ctx context.Context, req rpcRequest) (any, *rpcError) {
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return nil, &rpcError{-32602, "invalid params"}
+		}
+		if m.Lock != nil {
+			m.Lock.Lock()
+			defer m.Lock.Unlock()
 		}
 		text, structured, err := m.call(ctx, p.Name, p.Arguments)
 		if errors.Is(err, errUnknownTool) {

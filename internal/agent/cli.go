@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mauriceL99/Healthsync-copy/internal/healthdata"
@@ -38,6 +39,9 @@ Data
 
 Agents
   mcp            Run as an MCP server on stdio (for Claude Code, Codex, …)
+  serve          Run as a service: fetch regularly and answer MCP over HTTP
+                 (for ChatGPT and Claude on the web/apps; see docs/SERVER_START.md)
+  connector-url  Print the secret connector URL that serve answers on
 
 Other
   self-test      Check the executable offline
@@ -72,7 +76,7 @@ func Run(args []string, env Env) int {
 		fmt.Fprint(env.Err, usage)
 		return 2
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	cmd, rest := args[0], args[1:]
 	if cmd == "dev" {
@@ -505,6 +509,47 @@ func dispatch(ctx context.Context, env Env, cmd string, args []string, stateDir 
 		}
 		m := &MCP{Env: env, StateDir: stateDir}
 		return m.Serve(ctx, os.Stdin, env.Out)
+
+	case "serve":
+		var o ServeOptions
+		fs := newFlags(env, cmd, "serve [--addr :8788] [--fetch-every 15m]", &stateDir)
+		fs.StringVar(&o.Addr, "addr", defaultServeAddr, "listen address for MCP over HTTP (put an HTTPS proxy in front)")
+		fs.DurationVar(&o.FetchEvery, "fetch-every", defaultFetchInterval, "how often to fetch new data from the relay (0 = never)")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		return Serve(ctx, env, stateDir, o)
+
+	case "connector-url":
+		fs := newFlags(env, cmd, "connector-url [--public-url https://your-server.example] [--rotate]", &stateDir)
+		publicURL := fs.String("public-url", os.Getenv("HEALTHBRIDGE_PUBLIC_URL"), "public HTTPS address of this server (or HEALTHBRIDGE_PUBLIC_URL)")
+		rotate := fs.Bool("rotate", false, "create a new secret; the old URL stops working immediately")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		if *publicURL == "" {
+			fmt.Fprintln(env.Err, "--public-url is required, e.g. https://your-server.example")
+			fs.Usage()
+			return errUsage
+		}
+		s, err := OpenState(stateDir)
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+		token, err := s.MCPToken(*rotate)
+		if err != nil {
+			return err
+		}
+		u, err := ConnectorURL(*publicURL, token)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(env.Out, u)
+		if *rotate {
+			fmt.Fprintln(env.Err, "New secret URL created. Replace the old one in ChatGPT / Claude; it no longer works.")
+		}
+		return nil
 
 	case "self-test":
 		fs := newFlags(env, cmd, "self-test", &stateDir)
